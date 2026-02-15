@@ -67,42 +67,93 @@
 
     <!-- Settings Modal -->
     <div id="settingsModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
-        <div class="glass-card rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-auto">
+        <div class="glass-card rounded-3xl p-8 max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold">⚙️ הגדרות ניקוי שמות</h2>
-                <button onclick="closeSettings()" class="text-2xl text-slate-400 hover:text-slate-600">&times;</button>
+                <h2 class="text-2xl font-bold">⚙️ הגדרות מערכת</h2>
+                <button onclick="closeSettings()" class="text-3xl text-slate-400 hover:text-slate-600">&times;</button>
             </div>
             
-            <!-- Name Rules -->
+            <!-- כללי בחירת שמות אוטומטית -->
             <div class="mb-8">
-                <h3 class="text-lg font-bold text-slate-700 mb-4">📏 כללי שמות</h3>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="text-sm text-slate-500">אורך מינימלי (אותיות בלבד)</label>
-                        <input type="number" id="minLength" value="2" min="1" max="10" class="w-full px-4 py-2 rounded-xl border border-slate-200">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">🎯 כללי בחירת שמות אוטומטית</h3>
+                <p class="text-slate-500 mb-4">הגדר כיצד המערכת תבחר אוטומטית את השם הטוב ביותר כשיש כפילויות</p>
+                
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="nameRulesForm">
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-preferLonger" checked class="w-5 h-5 accent-indigo-600">
+                        <span>העדף שם ארוך יותר</span>
+                    </label>
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-preferHebrew" checked class="w-5 h-5 accent-indigo-600">
+                        <span>העדף עברית</span>
+                    </label>
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-avoidSpecialChars" checked class="w-5 h-5 accent-indigo-600">
+                        <span>הימנע מסימנים מיוחדים</span>
+                    </label>
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-preferNoNumbers" checked class="w-5 h-5 accent-indigo-600">
+                        <span>העדף שמות בלי מספרים</span>
+                    </label>
+                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                        <span>אורך מינימלי:</span>
+                        <input type="number" id="rule-minLength" value="2" min="0" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
+                        <span class="text-xs text-slate-400">(אותיות בלבד)</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                        <span>אורך מקסימלי:</span>
+                        <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
+                    </div>
+                </div>
+                
+                <p class="text-sm text-slate-500 mt-2">💡 אורך מינימלי סופר רק אותיות (עברית/אנגלית), לא נקודות, גרשיים או אימוג'ים</p>
+            </div>
+            
+            <!-- שמות לא תקינים (Blacklist) -->
+            <div class="mb-8">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">🚫 שמות לא תקינים (Blacklist)</h3>
+                <p class="text-slate-500 mb-4">שמות אלו יוחלפו אוטומטית בשם ברירת מחדל</p>
+                
+                <div class="flex gap-3 mb-4">
+                    <input type="text" id="newInvalidName" placeholder="הזן שם לא תקין..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200">
+                    <select id="newInvalidPattern" class="px-4 py-3 rounded-xl border border-slate-200">
+                        <option value="exact">התאמה מדויקת</option>
+                        <option value="contains">מכיל</option>
+                        <option value="regex">ביטוי רגולרי</option>
+                    </select>
+                    <button onclick="addInvalidName()" class="px-6 py-3 bg-red-100 text-red-700 rounded-xl font-bold hover:bg-red-200">➕ הוסף</button>
+                </div>
+                
+                <div id="invalidNamesList" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-auto"></div>
+            </div>
+            
+            <!-- כללי ניקוי שמות -->
+            <div class="mb-8">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">🧹 כללי ניקוי שמות</h3>
+                <p class="text-slate-500 mb-4">כללים אוטומטיים לניקוי וסידור שמות בעת הייבוא</p>
+                
+                <div id="cleaningRulesList" class="space-y-2 mb-4"></div>
+                
+                <div class="border-t border-slate-200 pt-4 mt-4">
+                    <h4 class="font-semibold text-slate-600 mb-3">➕ הוסף כלל חדש</h4>
+                    <div class="flex flex-wrap gap-3">
+                        <select id="newRuleType" class="px-4 py-3 rounded-xl border border-slate-200" onchange="updateRuleInputs()">
+                            <option value="trim_start">הסר מתחילת השם</option>
+                            <option value="trim_end">הסר מסוף השם</option>
+                            <option value="replace">החלף טקסט</option>
+                            <option value="regex">ביטוי רגולרי</option>
+                        </select>
+                        <input type="text" id="newRulePattern" placeholder="תו/טקסט להסרה..." class="px-4 py-3 rounded-xl border border-slate-200 flex-1">
+                        <input type="text" id="newRuleReplacement" placeholder="להחליף ב..." class="px-4 py-3 rounded-xl border border-slate-200 hidden">
+                        <input type="text" id="newRuleDesc" placeholder="תיאור הכלל..." class="px-4 py-3 rounded-xl border border-slate-200 w-48">
+                        <button onclick="addCleaningRule()" class="px-6 py-3 bg-indigo-100 text-indigo-700 rounded-xl font-bold hover:bg-indigo-200">➕ הוסף</button>
                     </div>
                 </div>
             </div>
             
-            <!-- Cleaning Rules -->
-            <div class="mb-8">
-                <h3 class="text-lg font-bold text-slate-700 mb-4">🧹 כללי ניקוי</h3>
-                <div id="cleaningRulesList" class="space-y-2"></div>
-            </div>
-            
-            <!-- Blacklist -->
-            <div class="mb-8">
-                <h3 class="text-lg font-bold text-slate-700 mb-4">🚫 שמות אסורים</h3>
-                <div class="flex gap-2 mb-4">
-                    <input type="text" id="newInvalidName" placeholder="הוסף שם לרשימה..." class="flex-1 px-4 py-2 rounded-xl border border-slate-200">
-                    <button onclick="addInvalidName()" class="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200">➕</button>
-                </div>
-                <div id="invalidNamesList" class="space-y-1 max-h-40 overflow-auto"></div>
-            </div>
-            
-            <div class="flex justify-end gap-3">
-                <button onclick="closeSettings()" class="px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-semibold">ביטול</button>
-                <button onclick="saveSettings()" class="px-6 py-2 bg-indigo-600 text-white rounded-xl font-semibold">💾 שמור והחל</button>
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                <button onclick="closeSettings()" class="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200">ביטול</button>
+                <button onclick="saveSettings()" class="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">💾 שמור והחל</button>
             </div>
         </div>
     </div>
@@ -438,17 +489,24 @@
             }
         }
         
-        // הגדרות
+        // ==================== הגדרות ====================
         function showSettings() {
             document.getElementById('settingsModal').classList.remove('hidden');
             document.getElementById('settingsModal').classList.add('flex');
             
-            document.getElementById('minLength').value = state.settings.nameRules?.minLength || 2;
+            // טען כללי בחירת שמות
+            const rules = state.settings.nameRules || {};
+            document.getElementById('rule-preferLonger').checked = rules.preferLonger !== false;
+            document.getElementById('rule-preferHebrew').checked = rules.preferHebrew !== false;
+            document.getElementById('rule-avoidSpecialChars').checked = rules.avoidSpecialChars !== false;
+            document.getElementById('rule-preferNoNumbers').checked = rules.preferNoNumbers !== false;
+            document.getElementById('rule-minLength').value = rules.minLength || 2;
+            document.getElementById('rule-maxLength').value = rules.maxLength || 20;
             
-            // כללי ניקוי
+            // רינדור כללי ניקוי
             renderCleaningRules();
             
-            // שמות אסורים
+            // רינדור שמות אסורים
             renderInvalidNames();
         }
         
@@ -457,53 +515,122 @@
             document.getElementById('settingsModal').classList.remove('flex');
         }
         
+        // כללי ניקוי
+        const ruleTypeLabels = {
+            'trim_start': 'הסר מתחילת השם',
+            'trim_end': 'הסר מסוף השם',
+            'replace': 'החלף',
+            'regex': 'ביטוי רגולרי'
+        };
+        
         function renderCleaningRules() {
             const rules = state.settings.cleaningRules || [];
-            document.getElementById('cleaningRulesList').innerHTML = rules.map((r, i) => `
-                <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                    <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleCleaningRule(${i})" class="w-4 h-4">
-                    <span class="flex-1 text-sm">${r.description || r.type}</span>
-                    <button onclick="removeCleaningRule(${i})" class="text-red-400 hover:text-red-600">✕</button>
+            document.getElementById('cleaningRulesList').innerHTML = rules.map((rule, idx) => `
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl ${!rule.enabled ? 'opacity-50' : ''}">
+                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} 
+                           onchange="toggleCleaningRule(${idx})" 
+                           class="w-5 h-5 accent-indigo-600">
+                    <span class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded">${ruleTypeLabels[rule.type] || rule.type}</span>
+                    <code class="text-sm bg-slate-200 px-2 py-1 rounded">"${rule.pattern}"</code>
+                    ${rule.type === 'replace' || rule.type === 'regex' ? `<span class="text-slate-400">→</span><code class="text-sm bg-green-100 px-2 py-1 rounded">"${rule.replacement || ''}"</code>` : ''}
+                    <span class="flex-1 text-slate-600 text-sm">${rule.description || ''}</span>
+                    <button onclick="deleteCleaningRule(${idx})" class="text-red-400 hover:text-red-600 text-lg">✕</button>
                 </div>
-            `).join('') || '<p class="text-slate-400 text-sm">אין כללים</p>';
+            `).join('') || '<p class="text-slate-400 text-center py-4">אין כללי ניקוי מוגדרים</p>';
         }
         
         function toggleCleaningRule(idx) {
             if (state.settings.cleaningRules[idx]) {
                 state.settings.cleaningRules[idx].enabled = !state.settings.cleaningRules[idx].enabled;
+                renderCleaningRules();
             }
         }
         
-        function removeCleaningRule(idx) {
+        function deleteCleaningRule(idx) {
             state.settings.cleaningRules.splice(idx, 1);
             renderCleaningRules();
+            Toast.fire({ icon: 'success', title: 'הכלל נמחק' });
         }
         
+        function addCleaningRule() {
+            const type = document.getElementById('newRuleType').value;
+            const pattern = document.getElementById('newRulePattern').value;
+            const replacement = document.getElementById('newRuleReplacement').value;
+            const description = document.getElementById('newRuleDesc').value;
+            
+            if (!pattern) return Toast.fire({ icon: 'error', title: 'הזן תו או טקסט' });
+            
+            const newRule = {
+                id: Date.now(),
+                type,
+                pattern,
+                replacement: (type === 'replace' || type === 'regex') ? replacement : undefined,
+                description,
+                enabled: true
+            };
+            
+            state.settings.cleaningRules = state.settings.cleaningRules || [];
+            state.settings.cleaningRules.push(newRule);
+            renderCleaningRules();
+            
+            // נקה שדות
+            document.getElementById('newRulePattern').value = '';
+            document.getElementById('newRuleReplacement').value = '';
+            document.getElementById('newRuleDesc').value = '';
+            
+            Toast.fire({ icon: 'success', title: 'הכלל נוסף' });
+        }
+        
+        function updateRuleInputs() {
+            const type = document.getElementById('newRuleType').value;
+            const replacementInput = document.getElementById('newRuleReplacement');
+            const patternInput = document.getElementById('newRulePattern');
+            
+            if (type === 'replace' || type === 'regex') {
+                replacementInput.classList.remove('hidden');
+                patternInput.placeholder = type === 'regex' ? 'ביטוי רגולרי...' : 'טקסט למציאה...';
+            } else {
+                replacementInput.classList.add('hidden');
+                patternInput.placeholder = type === 'trim_start' ? 'תו להסרה מההתחלה...' : 'תו להסרה מהסוף...';
+            }
+        }
+        
+        // שמות אסורים
         function renderInvalidNames() {
             const names = state.settings.invalidNames || [];
-            document.getElementById('invalidNamesList').innerHTML = names.slice(0, 50).map(n => `
-                <div class="flex items-center gap-2 p-1 text-sm">
-                    <span class="flex-1 text-red-600">${n.name}</span>
-                    <span class="text-xs text-slate-400">${n.pattern_type}</span>
+            const patternLabels = { 'exact': 'מדויק', 'contains': 'מכיל', 'regex': 'רגולרי' };
+            
+            document.getElementById('invalidNamesList').innerHTML = names.map(n => `
+                <div class="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
+                    <span class="font-medium text-red-700">${n.name}</span>
+                    <span class="text-xs text-red-400 mx-2">(${patternLabels[n.pattern_type] || n.pattern_type})</span>
                 </div>
-            `).join('') || '<p class="text-slate-400 text-sm">אין שמות אסורים</p>';
+            `).join('') || '<p class="text-slate-400 text-center col-span-4 py-4">אין שמות אסורים</p>';
         }
         
         async function addInvalidName() {
             const input = document.getElementById('newInvalidName');
+            const patternSelect = document.getElementById('newInvalidPattern');
             const name = input.value.trim();
-            if (!name) return;
+            const patternType = patternSelect.value;
             
-            await fetch(`/api/public/invalid-names/${token}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, patternType: 'exact' })
-            });
+            if (!name) return Toast.fire({ icon: 'error', title: 'הזן שם' });
             
-            state.settings.invalidNames.push({ name, pattern_type: 'exact' });
-            input.value = '';
-            renderInvalidNames();
-            Toast.fire({ icon: 'success', title: 'נוסף לרשימה השחורה' });
+            try {
+                await fetch(`/api/public/invalid-names/${token}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, patternType })
+                });
+                
+                state.settings.invalidNames = state.settings.invalidNames || [];
+                state.settings.invalidNames.push({ name, pattern_type: patternType });
+                input.value = '';
+                renderInvalidNames();
+                Toast.fire({ icon: 'success', title: 'השם נוסף לרשימה השחורה' });
+            } catch (err) {
+                Toast.fire({ icon: 'error', title: 'שגיאה בהוספה' });
+            }
         }
         
         async function saveSettings() {
@@ -511,7 +638,13 @@
                 Swal.fire({ title: 'שומר הגדרות...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
                 
                 const nameRules = {
-                    minLength: parseInt(document.getElementById('minLength').value) || 2
+                    preferLonger: document.getElementById('rule-preferLonger').checked,
+                    preferHebrew: document.getElementById('rule-preferHebrew').checked,
+                    avoidSpecialChars: document.getElementById('rule-avoidSpecialChars').checked,
+                    preferNoNumbers: document.getElementById('rule-preferNoNumbers').checked,
+                    minLength: parseInt(document.getElementById('rule-minLength').value) || 2,
+                    maxLength: parseInt(document.getElementById('rule-maxLength').value) || 20,
+                    allowedChars: ["'", '"', "-", " "]
                 };
                 
                 await fetch(`/api/public/settings/${token}`, {
