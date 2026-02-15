@@ -417,7 +417,11 @@
             currentPage: 1,
             analysisPage: 1,
             rejectedPage: 1,
-            addToGroupAfterUpload: null
+            addToGroupAfterUpload: null,
+            // מיון וסינון
+            sortBy: 'index', // index, name, phone
+            sortDir: 'asc',  // asc, desc
+            filterSource: '' // סינון לפי מקור
         };
         
         const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
@@ -1388,6 +1392,26 @@
             state.rejectedPage = page;
             showAnalysisTab('rejected');
         }
+        
+        // מיון
+        function setSort(field) {
+            if (state.sortBy === field) {
+                // אותו שדה - החלף כיוון
+                state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.sortBy = field;
+                state.sortDir = 'asc';
+            }
+            state.analysisPage = 1;
+            showAnalysisTab('accepted');
+        }
+        
+        // סינון לפי מקור
+        function setFilterSource(source) {
+            state.filterSource = source;
+            state.analysisPage = 1;
+            showAnalysisTab('accepted');
+        }
 
         // שמירת טיוטה לשרת
         let saveDraftTimeout = null;
@@ -1499,18 +1523,62 @@
             const data = state.analysisData;
             
             if (tab === 'accepted') {
+                // קבל רשימת מקורות ייחודיים
+                const sources = [...new Set((data.allData || []).map(c => c.sourceFile).filter(Boolean))];
+                
+                // סנן לפי מקור
+                let filtered = data.allData || [];
+                if (state.filterSource) {
+                    filtered = filtered.filter(c => c.sourceFile === state.filterSource);
+                }
+                
+                // מיין
+                const sorted = [...filtered].map((c, idx) => ({ ...c, originalIndex: (data.allData || []).indexOf(c) }));
+                if (state.sortBy === 'name') {
+                    sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+                } else if (state.sortBy === 'phone') {
+                    sorted.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''));
+                }
+                if (state.sortDir === 'desc') sorted.reverse();
+                
                 const page = state.analysisPage || 1;
                 const perPage = 500;
                 const start = (page - 1) * perPage;
                 const end = start + perPage;
-                const totalPages = Math.ceil((data.allData?.length || 0) / perPage);
+                const totalPages = Math.ceil(sorted.length / perPage);
+                
+                const sortIcon = (field) => state.sortBy === field ? (state.sortDir === 'asc' ? '▲' : '▼') : '⇅';
                 
                 content.innerHTML = `
+                    <!-- סרגל מיון וסינון -->
+                    <div class="flex flex-wrap gap-3 mb-4 p-3 bg-slate-50 rounded-xl">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-slate-500">מיון:</span>
+                            <button onclick="setSort('index')" class="px-3 py-1.5 rounded-lg text-sm font-medium ${state.sortBy === 'index' ? 'bg-indigo-600 text-white' : 'bg-white border hover:bg-slate-100'}">
+                                מקורי ${state.sortBy === 'index' ? sortIcon('index') : ''}
+                            </button>
+                            <button onclick="setSort('name')" class="px-3 py-1.5 rounded-lg text-sm font-medium ${state.sortBy === 'name' ? 'bg-indigo-600 text-white' : 'bg-white border hover:bg-slate-100'}">
+                                שם ${sortIcon('name')}
+                            </button>
+                            <button onclick="setSort('phone')" class="px-3 py-1.5 rounded-lg text-sm font-medium ${state.sortBy === 'phone' ? 'bg-indigo-600 text-white' : 'bg-white border hover:bg-slate-100'}">
+                                טלפון ${sortIcon('phone')}
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-slate-500">סינון לפי מקור:</span>
+                            <select onchange="setFilterSource(this.value)" class="px-3 py-1.5 rounded-lg border bg-white text-sm">
+                                <option value="">הכל (${(data.allData || []).length.toLocaleString()})</option>
+                                ${sources.map(s => `<option value="${s}" ${state.filterSource === s ? 'selected' : ''}>${s} (${(data.allData || []).filter(c => c.sourceFile === s).length.toLocaleString()})</option>`).join('')}
+                            </select>
+                        </div>
+                        ${state.filterSource ? `<button onclick="setFilterSource('')" class="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm hover:bg-red-200">✕ נקה סינון</button>` : ''}
+                    </div>
+                    
                     <div class="flex justify-between items-center mb-4">
-                        <p class="text-slate-600">מציג ${start + 1}-${Math.min(end, data.allData?.length || 0)} מתוך <strong>${(data.allData?.length || 0).toLocaleString()}</strong> אנשי קשר</p>
+                        <p class="text-slate-600">מציג ${start + 1}-${Math.min(end, sorted.length)} מתוך <strong>${sorted.length.toLocaleString()}</strong> אנשי קשר</p>
                         <div class="flex gap-2">
                             ${page > 1 ? `<button onclick="analysisPageChange(${page - 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">◀ הקודם</button>` : ''}
-                            <span class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-bold">עמוד ${page} / ${totalPages}</span>
+                            <span class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-bold">עמוד ${page} / ${totalPages || 1}</span>
                             ${page < totalPages ? `<button onclick="analysisPageChange(${page + 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">הבא ▶</button>` : ''}
                         </div>
                     </div>
@@ -1518,24 +1586,24 @@
                         <table class="w-full">
                             <thead class="bg-slate-50 sticky top-0"><tr>
                                 <th class="px-4 py-3 text-right font-semibold">#</th>
-                                <th class="px-4 py-3 text-right font-semibold">שם</th>
-                                <th class="px-4 py-3 text-right font-semibold">טלפון</th>
+                                <th class="px-4 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" onclick="setSort('name')">שם ${sortIcon('name')}</th>
+                                <th class="px-4 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" onclick="setSort('phone')">טלפון ${sortIcon('phone')}</th>
                                 <th class="px-4 py-3 text-right font-semibold">מקור</th>
                                 <th class="px-4 py-3 text-center font-semibold w-16"></th>
                             </tr></thead>
-                            <tbody>${(data.allData || []).slice(start, end).map((c, i) => `
+                            <tbody>${sorted.slice(start, end).map((c, i) => `
                                 <tr class="border-b border-slate-100">
                                     <td class="px-4 py-2 text-slate-400">${start + i + 1}</td>
                                     <td class="px-4 py-1">
                                         <input type="text" value="${(c.name || '').replace(/"/g, '&quot;')}" 
                                                class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none bg-transparent"
-                                               onchange="updateAnalysisName(${start + i}, this.value)"
+                                               onchange="updateAnalysisName(${c.originalIndex}, this.value)"
                                                onkeydown="if(event.key==='Enter') this.blur()">
                                     </td>
                                     <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
                                     <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
                                     <td class="px-4 py-2 text-center">
-                                        <button onclick="clearAnalysisName(${start + i})" class="text-red-400 hover:text-red-600 text-lg" title="מחק שם והוסף לרשימה שחורה">🗑️</button>
+                                        <button onclick="clearAnalysisName(${c.originalIndex})" class="text-red-400 hover:text-red-600 text-lg" title="מחק שם והוסף לרשימה שחורה">🗑️</button>
                                     </td>
                                 </tr>
                             `).join('')}</tbody>
