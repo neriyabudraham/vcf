@@ -61,12 +61,13 @@ const ALLOWED_EMAILS = [
 // Google OAuth Strategy - מוגדר רק אם יש credentials
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || 'https://vcf.botomat.co.il/auth/google/callback';
 
 if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
     passport.use(new GoogleStrategy({
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
-        callbackURL: '/auth/google/callback'
+        callbackURL: GOOGLE_CALLBACK_URL
     }, (accessToken, refreshToken, profile, done) => {
         const email = profile.emails?.[0]?.value;
         if (email && ALLOWED_EMAILS.includes(email.toLowerCase())) {
@@ -74,7 +75,7 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         }
         return done(null, false, { message: 'Email not authorized' });
     }));
-    console.log('[AUTH] Google OAuth enabled');
+    console.log('[AUTH] Google OAuth enabled with callback:', GOOGLE_CALLBACK_URL);
 } else {
     console.log('[AUTH] Google OAuth disabled - set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET env vars');
 }
