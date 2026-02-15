@@ -10,11 +10,7 @@ RUN npm ci --only=production
 
 # Copy application code
 COPY server.js ./
-COPY index.html ./
-COPY login.html ./
 COPY *.html ./
-COPY .htaccess ./ 2>/dev/null || true
-COPY .user.ini ./ 2>/dev/null || true
 
 # Create uploads directory
 RUN mkdir -p storage/uploads
