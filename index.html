@@ -353,7 +353,8 @@
             analysisData: null,
             currentPage: 1,
             analysisPage: 1,
-            rejectedPage: 1
+            rejectedPage: 1,
+            addToGroupAfterUpload: null
         };
         
         const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
@@ -494,14 +495,18 @@
                 
                 document.getElementById('contactsBody').innerHTML = data.contacts.map(c => `
                     <tr class="table-row border-b border-slate-100" id="contact-row-${c.id}">
-                        <td class="px-4 py-3 font-medium">
-                            <span id="contact-name-${c.id}">${c.full_name}</span>
+                        <td class="px-4 py-2">
+                            <input type="text" 
+                                   value="${c.full_name.replace(/"/g, '&quot;')}" 
+                                   class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium bg-transparent"
+                                   onchange="updateContactName(${c.id}, this.value)"
+                                   onkeydown="if(event.key==='Enter') this.blur()">
                         </td>
                         <td class="px-4 py-3 text-slate-600 font-mono">${c.phone}</td>
                         <td class="px-4 py-3 text-slate-500">${c.email || '-'}</td>
                         <td class="px-4 py-3 text-slate-400 text-sm">${c.source_file_name || '-'}</td>
                         <td class="px-4 py-3 text-center">
-                            <button onclick="editContactName(${c.id}, '${c.full_name.replace(/'/g, "\\'")}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-sm">✏️ ערוך</button>
+                            <button onclick="clearContactName(${c.id})" class="text-red-400 hover:text-red-600 text-sm" title="מחק שם">🗑️</button>
                         </td>
                     </tr>
                 `).join('') || '<tr><td colspan="5" class="text-center py-8 text-slate-400">לא נמצאו אנשי קשר</td></tr>';
@@ -529,28 +534,48 @@
             loadContacts();
         }
 
-        async function editContactName(id, currentName) {
-            const { value: newName } = await Swal.fire({
-                title: 'עריכת שם',
-                input: 'text',
-                inputValue: currentName,
-                inputPlaceholder: 'הזן שם חדש...',
-                showCancelButton: true,
-                confirmButtonText: 'שמור',
-                cancelButtonText: 'ביטול',
-                inputValidator: (value) => {
-                    if (!value || !value.trim()) return 'יש להזין שם';
-                }
-            });
+        async function updateContactName(id, newName) {
+            if (!newName || !newName.trim()) {
+                return clearContactName(id);
+            }
             
-            if (newName && newName.trim() !== currentName) {
+            try {
                 await api(`/api/contacts/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ full_name: newName.trim() })
                 });
-                document.getElementById(`contact-name-${id}`).textContent = newName.trim();
                 Toast.fire({ icon: 'success', title: 'השם עודכן' });
+            } catch (err) {
+                Toast.fire({ icon: 'error', title: 'שגיאה בעדכון' });
+                loadContacts(); // reload to show original
+            }
+        }
+
+        async function clearContactName(id) {
+            const result = await Swal.fire({
+                title: 'מחיקת שם',
+                text: 'איש הקשר יקבל שם אוטומטי לפי המספר שלו',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'מחק שם',
+                cancelButtonText: 'ביטול'
+            });
+            
+            if (result.isConfirmed) {
+                // קבל את 4 הספרות האחרונות של הטלפון
+                const row = document.getElementById(`contact-row-${id}`);
+                const phone = row?.querySelector('td:nth-child(2)')?.textContent || '';
+                const defaultName = `איש קשר ${phone.slice(-4)}`;
+                
+                await api(`/api/contacts/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: defaultName })
+                });
+                
+                Toast.fire({ icon: 'success', title: 'השם הוחלף לברירת מחדל' });
+                loadContacts();
             }
         }
 
@@ -843,12 +868,28 @@
             }
             
             globalProgress.classList.add('bg-green-500');
-            setTimeout(() => {
+            setTimeout(async () => {
                 document.getElementById('uploadOverlay').classList.add('hidden');
                 globalProgress.classList.remove('bg-green-500');
                 globalProgress.style.width = '0%';
-                loadFiles();
-                showView('files');
+                
+                // אם היינו באמצע הוספה לקבוצה קיימת
+                if (state.addToGroupAfterUpload) {
+                    const groupId = state.addToGroupAfterUpload;
+                    state.addToGroupAfterUpload = null;
+                    state.currentGroupId = groupId;
+                    
+                    // קח את הקבצים שזה עתה הועלו
+                    const newFiles = await api('/api/files');
+                    const newFileIds = newFiles.slice(0, files.length).map(f => f.id);
+                    
+                    if (newFileIds.length) {
+                        await processAddFiles(newFileIds);
+                    }
+                } else {
+                    loadFiles();
+                    showView('files');
+                }
             }, 1500);
             
             e.target.value = '';
@@ -1049,6 +1090,18 @@
             showAnalysisTab('rejected');
         }
 
+        function updateAnalysisName(index, newName) {
+            if (state.analysisData?.allData?.[index]) {
+                // אם השם ריק - תן שם ברירת מחדל
+                if (!newName || !newName.trim()) {
+                    const phone = state.analysisData.allData[index].phone || '';
+                    newName = `איש קשר ${phone.slice(-4)}`;
+                }
+                state.analysisData.allData[index].name = newName.trim();
+                Toast.fire({ icon: 'success', title: 'השם עודכן' });
+            }
+        }
+
         function showAnalysisTab(tab) {
             document.querySelectorAll('.analysis-tab').forEach(t => {
                 t.classList.remove('border-indigo-500', 'text-indigo-600');
@@ -1086,7 +1139,12 @@
                             <tbody>${(data.allData || []).slice(start, end).map((c, i) => `
                                 <tr class="border-b border-slate-100">
                                     <td class="px-4 py-2 text-slate-400">${start + i + 1}</td>
-                                    <td class="px-4 py-2">${c.name}</td>
+                                    <td class="px-4 py-1">
+                                        <input type="text" value="${(c.name || '').replace(/"/g, '&quot;')}" 
+                                               class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none bg-transparent"
+                                               onchange="updateAnalysisName(${start + i}, this.value)"
+                                               onkeydown="if(event.key==='Enter') this.blur()">
+                                    </td>
                                     <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
                                     <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
                                 </tr>
@@ -1257,21 +1315,43 @@
 
         // ==================== ADD TO GROUP ====================
         async function addFilesToGroup() {
-            // בדוק אם יש קבצים ממתינים
             const pendingFiles = await api('/api/files');
             
-            if (!pendingFiles.length) {
-                return Swal.fire({ 
-                    icon: 'info', 
-                    title: 'אין קבצים ממתינים', 
-                    text: 'העלה קבצים חדשים קודם',
-                    confirmButtonText: 'העלה קבצים'
-                }).then(result => {
-                    if (result.isConfirmed) document.getElementById('fileInput').click();
-                });
+            const { value: action } = await Swal.fire({
+                title: 'הוספת קבצים לרשימה',
+                html: `
+                    <div class="text-right space-y-4">
+                        <button id="uploadNewBtn" class="w-full p-4 bg-indigo-50 hover:bg-indigo-100 rounded-xl text-right border-2 border-indigo-200">
+                            <p class="font-bold text-indigo-700">📁 העלה קבצים חדשים</p>
+                            <p class="text-sm text-slate-500">בחר קבצי VCF או CSV מהמחשב</p>
+                        </button>
+                        ${pendingFiles.length ? `
+                            <button id="selectExistingBtn" class="w-full p-4 bg-slate-50 hover:bg-slate-100 rounded-xl text-right border-2 border-slate-200">
+                                <p class="font-bold text-slate-700">📋 בחר מקבצים קיימים</p>
+                                <p class="text-sm text-slate-500">${pendingFiles.length} קבצים ממתינים</p>
+                            </button>
+                        ` : ''}
+                    </div>
+                `,
+                showConfirmButton: false,
+                showCancelButton: true,
+                cancelButtonText: 'ביטול',
+                didOpen: () => {
+                    document.getElementById('uploadNewBtn')?.addEventListener('click', () => Swal.close({ value: 'upload' }));
+                    document.getElementById('selectExistingBtn')?.addEventListener('click', () => Swal.close({ value: 'select' }));
+                }
+            });
+            
+            if (action === 'upload') {
+                // העלה קבצים חדשים - נזכור את הקבוצה הנוכחית
+                state.addToGroupAfterUpload = state.currentGroupId;
+                document.getElementById('fileInput').click();
+                return;
             }
             
-            // בחר קבצים להוספה
+            if (action !== 'select' || !pendingFiles.length) return;
+            
+            // בחר מקבצים קיימים
             const { value: selectedIds, isConfirmed } = await Swal.fire({
                 title: 'בחר קבצים להוספה',
                 html: `
@@ -1301,11 +1381,14 @@
             });
             
             if (!isConfirmed || !selectedIds) return;
-            
+            await processAddFiles(selectedIds);
+        }
+        
+        async function processAddFiles(fileIds) {
             Swal.fire({ title: 'מוסיף קבצים...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
             
             try {
-                const processingData = selectedIds.map(id => ({
+                const processingData = fileIds.map(id => ({
                     fileId: id,
                     mapping: state.mappings[id] || { phoneField: 'Phone', nameFields: ['Name'] }
                 }));
