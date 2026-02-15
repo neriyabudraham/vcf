@@ -108,7 +108,7 @@ function countRealChars(name) {
 // בדיקה אם שם קצר מדי
 async function isNameTooShort(name) {
     const rules = nameRulesCache || await loadNameRules();
-    const minLength = rules.minLength || 0;
+    const minLength = rules.minLength ?? 2; // ברירת מחדל: 2 תווים
     if (minLength <= 0) return false;
     return countRealChars(name) < minLength;
 }
@@ -244,7 +244,7 @@ async function cleanName(name) {
     
     // אם השם קצר מדי - החזר ריק
     const nameRules = nameRulesCache || await loadNameRules();
-    const minLength = nameRules.minLength || 0;
+    const minLength = nameRules.minLength ?? 2; // ברירת מחדל: 2 תווים
     if (minLength > 0 && countRealChars(result) < minLength) return '';
     
     return result;
