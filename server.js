@@ -608,10 +608,21 @@ app.post('/api/finalize', auth, async (req, res) => {
             [groupId, JSON.stringify(finalContacts), JSON.stringify(stats || {})]
         );
         
-        // הכנסת אנשי קשר
+        // הכנסת אנשי קשר (עם חיתוך ערכים ארוכים)
+        const truncate = (s, max) => s && s.length > max ? s.substring(0, max) : s;
         let batch = [];
         for (const c of finalContacts) {
-            batch.push([groupId, c.name, c.phone, c.phone, c.email, c.sourceFileId, c.sourceFile, JSON.stringify(c.originalData), '{}']);
+            batch.push([
+                groupId, 
+                truncate(c.name, 250), 
+                c.phone, 
+                c.phone, 
+                truncate(c.email, 250), 
+                c.sourceFileId, 
+                truncate(c.sourceFile, 450), 
+                JSON.stringify(c.originalData), 
+                '{}'
+            ]);
             if (batch.length >= 1000) {
                 await pool.query(
                     `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
