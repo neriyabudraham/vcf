@@ -228,8 +228,9 @@
                     <h2 class="text-3xl font-black text-slate-800" id="groupTitle"></h2>
                     <p class="text-slate-500" id="groupInfo"></p>
                 </div>
-                <div class="flex gap-3">
+                <div class="flex gap-3 flex-wrap">
                     <button onclick="addFilesToGroup()" class="btn-primary px-4 py-2 rounded-xl font-semibold">➕ הוסף קבצים</button>
+                    <button onclick="checkDuplicates()" class="btn-warning px-4 py-2 rounded-xl font-semibold">🔍 בדוק כפילויות</button>
                     <button onclick="saveVersion()" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">💾 שמור גרסה</button>
                     <button onclick="exportGroup('csv')" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">📊 CSV</button>
                     <button onclick="exportGroup('vcf')" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">📇 VCF</button>
@@ -249,14 +250,15 @@
                 <div class="flex gap-4 mb-6">
                     <input type="text" id="contactSearch" placeholder="🔍 חיפוש לפי שם או טלפון..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none" oninput="searchContacts()">
                 </div>
-                <div id="contactsTable" class="overflow-x-auto">
+                <div id="contactsTable" class="overflow-x-auto max-h-[60vh] overflow-y-auto">
                     <table class="w-full">
-                        <thead class="bg-slate-50 text-slate-600">
+                        <thead class="bg-slate-50 text-slate-600 sticky top-0">
                             <tr>
                                 <th class="px-4 py-3 text-right font-semibold rounded-tr-xl">שם</th>
                                 <th class="px-4 py-3 text-right font-semibold">טלפון</th>
                                 <th class="px-4 py-3 text-right font-semibold">אימייל</th>
-                                <th class="px-4 py-3 text-right font-semibold rounded-tl-xl">מקור</th>
+                                <th class="px-4 py-3 text-right font-semibold">מקור</th>
+                                <th class="px-4 py-3 text-center font-semibold rounded-tl-xl w-24">פעולות</th>
                             </tr>
                         </thead>
                         <tbody id="contactsBody"></tbody>
@@ -491,13 +493,18 @@
                 const data = await api(`/api/groups/${state.currentGroupId}/contacts?search=${encodeURIComponent(search)}&page=${state.currentPage}&limit=50`);
                 
                 document.getElementById('contactsBody').innerHTML = data.contacts.map(c => `
-                    <tr class="table-row border-b border-slate-100">
-                        <td class="px-4 py-3 font-medium">${c.full_name}</td>
+                    <tr class="table-row border-b border-slate-100" id="contact-row-${c.id}">
+                        <td class="px-4 py-3 font-medium">
+                            <span id="contact-name-${c.id}">${c.full_name}</span>
+                        </td>
                         <td class="px-4 py-3 text-slate-600 font-mono">${c.phone}</td>
                         <td class="px-4 py-3 text-slate-500">${c.email || '-'}</td>
                         <td class="px-4 py-3 text-slate-400 text-sm">${c.source_file_name || '-'}</td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="editContactName(${c.id}, '${c.full_name.replace(/'/g, "\\'")}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-sm">✏️ ערוך</button>
+                        </td>
                     </tr>
-                `).join('') || '<tr><td colspan="4" class="text-center py-8 text-slate-400">לא נמצאו אנשי קשר</td></tr>';
+                `).join('') || '<tr><td colspan="5" class="text-center py-8 text-slate-400">לא נמצאו אנשי קשר</td></tr>';
                 
                 // Pagination
                 const totalPages = Math.ceil(data.total / data.limit);
@@ -520,6 +527,148 @@
         function searchContacts() {
             state.currentPage = 1;
             loadContacts();
+        }
+
+        async function editContactName(id, currentName) {
+            const { value: newName } = await Swal.fire({
+                title: 'עריכת שם',
+                input: 'text',
+                inputValue: currentName,
+                inputPlaceholder: 'הזן שם חדש...',
+                showCancelButton: true,
+                confirmButtonText: 'שמור',
+                cancelButtonText: 'ביטול',
+                inputValidator: (value) => {
+                    if (!value || !value.trim()) return 'יש להזין שם';
+                }
+            });
+            
+            if (newName && newName.trim() !== currentName) {
+                await api(`/api/contacts/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: newName.trim() })
+                });
+                document.getElementById(`contact-name-${id}`).textContent = newName.trim();
+                Toast.fire({ icon: 'success', title: 'השם עודכן' });
+            }
+        }
+
+        async function checkDuplicates() {
+            const data = await api(`/api/groups/${state.currentGroupId}/duplicates`);
+            
+            if (data.duplicates.length === 0) {
+                return Swal.fire({ icon: 'success', title: 'אין כפילויות!', text: 'כל השמות ייחודיים' });
+            }
+            
+            const result = await Swal.fire({
+                title: `נמצאו ${data.totalDuplicateNames} שמות כפולים`,
+                html: `
+                    <div class="text-right">
+                        <p class="mb-4">סה"כ <strong>${data.totalDuplicateContacts}</strong> אנשי קשר עם שמות זהים</p>
+                        <div class="max-h-60 overflow-y-auto text-sm">
+                            ${data.duplicates.slice(0, 20).map(d => `
+                                <div class="flex justify-between items-center py-2 border-b">
+                                    <span class="font-medium">${d.full_name}</span>
+                                    <span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs">${d.count}x</span>
+                                </div>
+                            `).join('')}
+                            ${data.duplicates.length > 20 ? `<p class="text-slate-400 mt-2">ועוד ${data.duplicates.length - 20} שמות...</p>` : ''}
+                        </div>
+                    </div>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonText: '🔧 תקן אוטומטית',
+                denyButtonText: '📝 ערוך ידנית',
+                cancelButtonText: 'ביטול',
+                confirmButtonColor: '#10b981',
+                denyButtonColor: '#6366f1'
+            });
+            
+            if (result.isConfirmed) {
+                // תיקון אוטומטי
+                Swal.fire({ title: 'מתקן כפילויות...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                const fixResult = await api(`/api/groups/${state.currentGroupId}/fix-duplicates`, { method: 'POST' });
+                Swal.fire({ 
+                    icon: 'success', 
+                    title: 'הכפילויות תוקנו!', 
+                    text: `${fixResult.fixed} שמות עודכנו עם מספור אוטומטי`
+                });
+                loadContacts();
+            } else if (result.isDenied) {
+                // עריכה ידנית - הצג את הכפילויות
+                showDuplicatesEditor(data.duplicates);
+            }
+        }
+
+        async function showDuplicatesEditor(duplicates) {
+            let currentIndex = 0;
+            
+            async function showNext() {
+                if (currentIndex >= duplicates.length) {
+                    Swal.fire({ icon: 'success', title: 'סיימת!', text: 'כל הכפילויות טופלו' });
+                    loadContacts();
+                    return;
+                }
+                
+                const dup = duplicates[currentIndex];
+                const contactsRes = await api(`/api/groups/${state.currentGroupId}/contacts?search=${encodeURIComponent(dup.full_name)}&limit=100`);
+                const contacts = contactsRes.contacts.filter(c => c.full_name === dup.full_name);
+                
+                const { value: formValues, isDenied } = await Swal.fire({
+                    title: `כפילות ${currentIndex + 1}/${duplicates.length}: ${dup.full_name}`,
+                    html: `
+                        <div class="text-right">
+                            <p class="mb-4">${contacts.length} אנשי קשר עם שם זהה</p>
+                            <div class="space-y-3 max-h-60 overflow-y-auto">
+                                ${contacts.map((c, i) => `
+                                    <div class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
+                                        <span class="text-slate-400">${i + 1}.</span>
+                                        <input type="text" id="dup-name-${c.id}" value="${c.full_name}${i > 0 ? ' (' + (i + 1) + ')' : ''}" class="flex-1 px-3 py-2 rounded border border-slate-200">
+                                        <span class="text-xs text-slate-400 font-mono">${c.phone}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    showDenyButton: true,
+                    confirmButtonText: 'שמור והמשך',
+                    denyButtonText: 'דלג',
+                    cancelButtonText: 'סיים',
+                    preConfirm: () => {
+                        return contacts.map(c => ({
+                            id: c.id,
+                            name: document.getElementById(`dup-name-${c.id}`).value
+                        }));
+                    }
+                });
+                
+                if (formValues) {
+                    // שמור את השינויים
+                    for (const item of formValues) {
+                        const contact = contacts.find(c => c.id === item.id);
+                        if (contact && contact.full_name !== item.name) {
+                            await api(`/api/contacts/${item.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ full_name: item.name })
+                            });
+                        }
+                    }
+                    currentIndex++;
+                    showNext();
+                } else if (isDenied) {
+                    currentIndex++;
+                    showNext();
+                } else {
+                    loadContacts();
+                }
+            }
+            
+            showNext();
         }
 
         async function deleteGroup(id) {
@@ -1108,8 +1257,82 @@
 
         // ==================== ADD TO GROUP ====================
         async function addFilesToGroup() {
-            // TODO: implement add files to existing group
-            Toast.fire({ icon: 'info', title: 'פיצ\'ר בפיתוח' });
+            // בדוק אם יש קבצים ממתינים
+            const pendingFiles = await api('/api/files');
+            
+            if (!pendingFiles.length) {
+                return Swal.fire({ 
+                    icon: 'info', 
+                    title: 'אין קבצים ממתינים', 
+                    text: 'העלה קבצים חדשים קודם',
+                    confirmButtonText: 'העלה קבצים'
+                }).then(result => {
+                    if (result.isConfirmed) document.getElementById('fileInput').click();
+                });
+            }
+            
+            // בחר קבצים להוספה
+            const { value: selectedIds, isConfirmed } = await Swal.fire({
+                title: 'בחר קבצים להוספה',
+                html: `
+                    <div class="text-right max-h-60 overflow-y-auto">
+                        ${pendingFiles.map(f => `
+                            <label class="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-lg cursor-pointer">
+                                <input type="checkbox" value="${f.id}" class="add-file-checkbox w-5 h-5 accent-indigo-600">
+                                <div class="flex-1">
+                                    <p class="font-medium">${f.original_name}</p>
+                                    <p class="text-xs text-slate-400">${f.parsed_count?.toLocaleString() || 0} אנשי קשר</p>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'הוסף לרשימה',
+                cancelButtonText: 'ביטול',
+                preConfirm: () => {
+                    const checked = document.querySelectorAll('.add-file-checkbox:checked');
+                    if (!checked.length) {
+                        Swal.showValidationMessage('בחר לפחות קובץ אחד');
+                        return false;
+                    }
+                    return Array.from(checked).map(c => parseInt(c.value));
+                }
+            });
+            
+            if (!isConfirmed || !selectedIds) return;
+            
+            Swal.fire({ title: 'מוסיף קבצים...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            try {
+                const processingData = selectedIds.map(id => ({
+                    fileId: id,
+                    mapping: state.mappings[id] || { phoneField: 'Phone', nameFields: ['Name'] }
+                }));
+                
+                const result = await api(`/api/groups/${state.currentGroupId}/add-files`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ processingData })
+                });
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'הקבצים נוספו!',
+                    html: `
+                        <div class="text-right">
+                            <p>✅ נוספו: <strong>${result.added?.toLocaleString() || 0}</strong></p>
+                            <p>⏭️ כפילויות (דולגו): <strong>${result.duplicates?.toLocaleString() || 0}</strong></p>
+                            <p>❌ נדחו: <strong>${result.skipped?.toLocaleString() || 0}</strong></p>
+                        </div>
+                    `
+                });
+                
+                viewGroup(state.currentGroupId);
+                
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
         }
 
         // ==================== SETTINGS ====================

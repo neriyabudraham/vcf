@@ -945,6 +945,89 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
     }
 });
 
+// ==================== CONTACT EDITING ====================
+
+// עדכון שם איש קשר
+app.put('/api/contacts/:id', auth, async (req, res) => {
+    try {
+        const { full_name } = req.body;
+        if (!full_name || !full_name.trim()) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        
+        await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [full_name.trim(), req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// מציאת שמות כפולים בקבוצה
+app.get('/api/groups/:id/duplicates', auth, async (req, res) => {
+    try {
+        const r = await pool.query(`
+            SELECT full_name, array_agg(id) as ids, count(*) as count
+            FROM contacts 
+            WHERE group_id = $1
+            GROUP BY full_name
+            HAVING count(*) > 1
+            ORDER BY count DESC, full_name
+        `, [req.params.id]);
+        
+        res.json({
+            duplicates: r.rows,
+            totalDuplicateNames: r.rows.length,
+            totalDuplicateContacts: r.rows.reduce((sum, d) => sum + parseInt(d.count), 0)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// תיקון אוטומטי של שמות כפולים - הוספת מספרים
+app.post('/api/groups/:id/fix-duplicates', auth, async (req, res) => {
+    try {
+        const groupId = req.params.id;
+        
+        // שמור גרסה לפני השינוי
+        const g = await pool.query('SELECT * FROM contact_groups WHERE id = $1', [groupId]);
+        const currentContacts = await pool.query('SELECT * FROM contacts WHERE group_id = $1', [groupId]);
+        const newVersion = (g.rows[0]?.version || 0) + 1;
+        
+        await pool.query(
+            `INSERT INTO group_versions (group_id, version_number, version_name, contacts_snapshot, stats) 
+             VALUES ($1, $2, $3, $4, $5)`,
+            [groupId, newVersion, 'לפני תיקון כפילויות', JSON.stringify(currentContacts.rows), JSON.stringify(g.rows[0]?.stats)]
+        );
+        
+        // מצא כפילויות
+        const dupsRes = await pool.query(`
+            SELECT full_name, array_agg(id ORDER BY id) as ids
+            FROM contacts 
+            WHERE group_id = $1
+            GROUP BY full_name
+            HAVING count(*) > 1
+        `, [groupId]);
+        
+        let fixed = 0;
+        for (const dup of dupsRes.rows) {
+            const ids = dup.ids;
+            // השאר את הראשון כמו שהוא, הוסף מספרים לשאר
+            for (let i = 1; i < ids.length; i++) {
+                const newName = `${dup.full_name} (${i + 1})`;
+                await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [newName, ids[i]]);
+                fixed++;
+            }
+        }
+        
+        await pool.query('UPDATE contact_groups SET version = $2 WHERE id = $1', [groupId, newVersion + 1]);
+        
+        res.json({ success: true, fixed, duplicateGroups: dupsRes.rows.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ==================== STATS & DASHBOARD ====================
 
 app.get('/api/dashboard-stats', auth, async (req, res) => {
