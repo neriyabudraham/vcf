@@ -74,7 +74,7 @@
                 <button onclick="showView('dashboard')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="dashboard">דשבורד</button>
                 <button onclick="showView('groups')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="groups">רשימות</button>
                 <button onclick="showView('files')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="files">קבצים</button>
-                <button onclick="showView('settings')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="settings">⚙️ הגדרות</button>
+                <button onclick="openSettingsModal()" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100">⚙️ הגדרות</button>
                 <button onclick="document.getElementById('fileInput').click()" class="btn-primary px-6 py-2.5 rounded-xl font-bold shadow-lg">
                     <span class="flex items-center gap-2">📁 העלאת קבצים</span>
                 </button>
@@ -221,9 +221,14 @@
                     <h2 class="text-3xl font-black text-slate-800" id="analysisTitle">ניתוח נתונים</h2>
                     <p class="text-slate-500" id="analysisSummary"></p>
                 </div>
-                <button onclick="finalizeGroup()" class="btn-success px-8 py-3 rounded-xl font-bold shadow-lg">
-                    ✅ שמור וסיים
-                </button>
+                <div class="flex gap-3">
+                    <button onclick="openSettingsModal()" class="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold">
+                        ⚙️ הגדרות
+                    </button>
+                    <button onclick="finalizeGroup()" class="btn-success px-8 py-3 rounded-xl font-bold shadow-lg">
+                        ✅ שמור וסיים
+                    </button>
+                </div>
             </div>
             
             <!-- Stats Summary -->
@@ -300,94 +305,103 @@
             </div>
         </section>
 
-        <!-- Settings View -->
-        <section id="settings-view" class="hidden fade-in">
-            <div class="glass-card rounded-3xl p-8 mb-8">
-                <h2 class="text-2xl font-black text-slate-800 mb-6">⚙️ הגדרות מערכת</h2>
+    </main>
+    
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div class="glass-card rounded-3xl p-8 w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-black text-slate-800">⚙️ הגדרות מערכת</h2>
+                <button onclick="closeSettingsModal()" class="text-3xl text-slate-400 hover:text-slate-600">&times;</button>
+            </div>
+            
+            <!-- כללי בחירת שמות -->
+            <div class="mb-8">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">🎯 כללי בחירת שמות אוטומטית</h3>
+                <p class="text-slate-500 mb-4">הגדר כיצד המערכת תבחר אוטומטית את השם הטוב ביותר כשיש כפילויות</p>
                 
-                <!-- כללי בחירת שמות -->
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold text-slate-700 mb-4">🎯 כללי בחירת שמות אוטומטית</h3>
-                    <p class="text-slate-500 mb-4">הגדר כיצד המערכת תבחר אוטומטית את השם הטוב ביותר כשיש כפילויות</p>
-                    
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="nameRulesForm">
-                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                            <input type="checkbox" id="rule-preferLonger" checked class="w-5 h-5 accent-indigo-600">
-                            <span>העדף שם ארוך יותר</span>
-                        </label>
-                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                            <input type="checkbox" id="rule-preferHebrew" checked class="w-5 h-5 accent-indigo-600">
-                            <span>העדף עברית</span>
-                        </label>
-                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                            <input type="checkbox" id="rule-avoidSpecialChars" checked class="w-5 h-5 accent-indigo-600">
-                            <span>הימנע מסימנים מיוחדים</span>
-                        </label>
-                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                            <input type="checkbox" id="rule-preferNoNumbers" checked class="w-5 h-5 accent-indigo-600">
-                            <span>העדף שמות בלי מספרים</span>
-                        </label>
-                        <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
-                            <span>אורך מינימלי:</span>
-                            <input type="number" id="rule-minLength" value="2" min="0" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
-                            <span class="text-xs text-slate-400">(אותיות בלבד)</span>
-                        </div>
-                        <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
-                            <span>אורך מקסימלי:</span>
-                            <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
-                        </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="nameRulesForm">
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-preferLonger" checked class="w-5 h-5 accent-indigo-600">
+                        <span>העדף שם ארוך יותר</span>
+                    </label>
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-preferHebrew" checked class="w-5 h-5 accent-indigo-600">
+                        <span>העדף עברית</span>
+                    </label>
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-avoidSpecialChars" checked class="w-5 h-5 accent-indigo-600">
+                        <span>הימנע מסימנים מיוחדים</span>
+                    </label>
+                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" id="rule-preferNoNumbers" checked class="w-5 h-5 accent-indigo-600">
+                        <span>העדף שמות בלי מספרים</span>
+                    </label>
+                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                        <span>אורך מינימלי:</span>
+                        <input type="number" id="rule-minLength" value="2" min="0" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
+                        <span class="text-xs text-slate-400">(אותיות בלבד)</span>
                     </div>
-                    
-                    <p class="text-sm text-slate-500 mt-2">💡 אורך מינימלי סופר רק אותיות (עברית/אנגלית), לא נקודות, גרשיים או אימוג'ים</p>
-                    
-                    <button onclick="saveNameRules()" class="btn-primary px-6 py-3 rounded-xl font-bold mt-4">שמור כללים</button>
+                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                        <span>אורך מקסימלי:</span>
+                        <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
+                    </div>
                 </div>
                 
-                <!-- שמות לא תקינים -->
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold text-slate-700 mb-4">🚫 שמות לא תקינים (Blacklist)</h3>
-                    <p class="text-slate-500 mb-4">שמות אלו יוחלפו אוטומטית בשם ברירת מחדל</p>
-                    
-                    <div class="flex gap-3 mb-4">
-                        <input type="text" id="newInvalidName" placeholder="הזן שם לא תקין..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200">
-                        <select id="newInvalidPattern" class="px-4 py-3 rounded-xl border border-slate-200">
-                            <option value="exact">התאמה מדויקת</option>
-                            <option value="contains">מכיל</option>
+                <p class="text-sm text-slate-500 mt-2">💡 אורך מינימלי סופר רק אותיות (עברית/אנגלית), לא נקודות, גרשיים או אימוג'ים</p>
+            </div>
+            
+            <!-- שמות לא תקינים -->
+            <div class="mb-8">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">🚫 שמות לא תקינים (Blacklist)</h3>
+                <p class="text-slate-500 mb-4">שמות אלו יוחלפו אוטומטית בשם ברירת מחדל</p>
+                
+                <div class="flex gap-3 mb-4">
+                    <input type="text" id="newInvalidName" placeholder="הזן שם לא תקין..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200">
+                    <select id="newInvalidPattern" class="px-4 py-3 rounded-xl border border-slate-200">
+                        <option value="exact">התאמה מדויקת</option>
+                        <option value="contains">מכיל</option>
+                        <option value="regex">ביטוי רגולרי</option>
+                    </select>
+                    <button onclick="addInvalidName()" class="btn-primary px-6 py-3 rounded-xl font-bold">➕ הוסף</button>
+                </div>
+                
+                <div id="invalidNamesList" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-auto"></div>
+            </div>
+            
+            <!-- כללי ניקוי שמות -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">🧹 כללי ניקוי שמות</h3>
+                <p class="text-slate-500 mb-4">כללים אוטומטיים לניקוי וסידור שמות בעת הייבוא</p>
+                
+                <div id="cleaningRulesList" class="space-y-2 mb-4 max-h-48 overflow-auto"></div>
+                
+                <div class="border-t border-slate-200 pt-4 mt-4">
+                    <h4 class="font-semibold text-slate-600 mb-3">➕ הוסף כלל חדש</h4>
+                    <div class="flex flex-wrap gap-3">
+                        <select id="newRuleType" class="px-4 py-3 rounded-xl border border-slate-200" onchange="updateRuleInputs()">
+                            <option value="trim_start">הסר מתחילת השם</option>
+                            <option value="trim_end">הסר מסוף השם</option>
+                            <option value="replace">החלף טקסט</option>
                             <option value="regex">ביטוי רגולרי</option>
                         </select>
-                        <button onclick="addInvalidName()" class="btn-primary px-6 py-3 rounded-xl font-bold">➕ הוסף</button>
-                    </div>
-                    
-                    <div id="invalidNamesList" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
-                </div>
-                
-                <!-- כללי ניקוי שמות -->
-                <div>
-                    <h3 class="text-xl font-bold text-slate-700 mb-4">🧹 כללי ניקוי שמות</h3>
-                    <p class="text-slate-500 mb-4">כללים אוטומטיים לניקוי וסידור שמות בעת הייבוא</p>
-                    
-                    <div id="cleaningRulesList" class="space-y-2 mb-4"></div>
-                    
-                    <div class="border-t border-slate-200 pt-4 mt-4">
-                        <h4 class="font-semibold text-slate-600 mb-3">➕ הוסף כלל חדש</h4>
-                        <div class="flex flex-wrap gap-3">
-                            <select id="newRuleType" class="px-4 py-3 rounded-xl border border-slate-200" onchange="updateRuleInputs()">
-                                <option value="trim_start">הסר מתחילת השם</option>
-                                <option value="trim_end">הסר מסוף השם</option>
-                                <option value="replace">החלף טקסט</option>
-                                <option value="regex">ביטוי רגולרי</option>
-                            </select>
-                            <input type="text" id="newRulePattern" placeholder="תו/טקסט להסרה..." class="px-4 py-3 rounded-xl border border-slate-200 flex-1">
-                            <input type="text" id="newRuleReplacement" placeholder="להחליף ב..." class="px-4 py-3 rounded-xl border border-slate-200 hidden">
-                            <input type="text" id="newRuleDesc" placeholder="תיאור הכלל..." class="px-4 py-3 rounded-xl border border-slate-200 w-48">
-                            <button onclick="addCleaningRule()" class="btn-primary px-6 py-3 rounded-xl font-bold">➕ הוסף</button>
-                        </div>
+                        <input type="text" id="newRulePattern" placeholder="תו/טקסט להסרה..." class="px-4 py-3 rounded-xl border border-slate-200 flex-1">
+                        <input type="text" id="newRuleReplacement" placeholder="להחליף ב..." class="px-4 py-3 rounded-xl border border-slate-200 hidden">
+                        <input type="text" id="newRuleDesc" placeholder="תיאור הכלל..." class="px-4 py-3 rounded-xl border border-slate-200 w-48">
+                        <button onclick="addCleaningRule()" class="btn-primary px-6 py-3 rounded-xl font-bold">➕ הוסף</button>
                     </div>
                 </div>
             </div>
-        </section>
-
-    </main>
+            
+            <div class="flex justify-between items-center pt-4 border-t border-slate-200">
+                <p class="text-sm text-slate-500">💡 השינויים יוחלו מיד על הטיוטה הפתוחה</p>
+                <div class="flex gap-3">
+                    <button onclick="closeSettingsModal()" class="px-6 py-3 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">סגור</button>
+                    <button onclick="saveAllSettingsAndApply()" class="btn-primary px-6 py-3 rounded-xl font-bold">💾 שמור והחל</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Mapping Modal -->
     <div id="mappingModal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -446,7 +460,54 @@
             if (view === 'dashboard') loadDashboard();
             else if (view === 'groups') loadGroups();
             else if (view === 'files') loadFiles();
-            else if (view === 'settings') loadSettings();
+        }
+        
+        // ==================== SETTINGS MODAL ====================
+        async function openSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('hidden');
+            await loadSettings();
+        }
+        
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.add('hidden');
+        }
+        
+        async function saveAllSettingsAndApply() {
+            // שמור כללי שמות
+            await saveNameRules();
+            
+            // אם יש טיוטה פתוחה, החל את ההגדרות מיידית
+            if (state.analysisData && state.currentGroupId) {
+                Toast.fire({ icon: 'info', title: 'מחיל הגדרות על הטיוטה...' });
+                
+                // טען מחדש את הטיוטה עם ההגדרות החדשות
+                await reloadDraftWithNewSettings();
+            }
+            
+            closeSettingsModal();
+            Toast.fire({ icon: 'success', title: 'ההגדרות נשמרו והוחלו' });
+        }
+        
+        async function reloadDraftWithNewSettings() {
+            if (!state.analysisData || !state.currentGroupId) return;
+            
+            try {
+                // שלח בקשה לעיבוד מחדש של הטיוטה עם ההגדרות החדשות
+                const data = await api('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fileIds: state.analysisData.stats?.fileIds || [],
+                        draftId: state.currentGroupId,
+                        forceReprocess: true
+                    })
+                });
+                
+                state.analysisData = data;
+                showAnalysisTab('accepted');
+            } catch (err) {
+                console.error('Error reloading draft:', err);
+            }
         }
 
         // ==================== DASHBOARD ====================
@@ -1959,14 +2020,7 @@
                 document.getElementById('rule-maxLength').value = rules.maxLength || 20;
                 
                 // טען שמות לא תקינים
-                const invalidNames = await api('/api/invalid-names');
-                document.getElementById('invalidNamesList').innerHTML = invalidNames.map(n => `
-                    <div class="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
-                        <span class="font-medium text-red-700">${n.name}</span>
-                        <span class="text-xs text-red-400 mx-2">(${n.pattern_type})</span>
-                        <button onclick="deleteInvalidName(${n.id})" class="text-red-400 hover:text-red-600">✕</button>
-                    </div>
-                `).join('');
+                await loadInvalidNames();
                 
                 // טען כללי ניקוי
                 await loadCleaningRules();
@@ -1975,7 +2029,7 @@
             }
         }
 
-        async function saveNameRules() {
+        async function saveNameRules(showToast = false) {
             const rules = {
                 preferLonger: document.getElementById('rule-preferLonger').checked,
                 preferHebrew: document.getElementById('rule-preferHebrew').checked,
@@ -1992,7 +2046,9 @@
                 body: JSON.stringify(rules)
             });
             
-            Toast.fire({ icon: 'success', title: 'הכללים נשמרו' });
+            if (showToast) {
+                Toast.fire({ icon: 'success', title: 'הכללים נשמרו' });
+            }
         }
 
         async function addInvalidName() {
@@ -2008,14 +2064,28 @@
             });
             
             document.getElementById('newInvalidName').value = '';
-            Toast.fire({ icon: 'success', title: 'השם נוסף לרשימה השחורה' });
-            loadSettings();
+            Toast.fire({ icon: 'success', title: 'השם נוסף - לחץ "שמור והחל" להחלה על הטיוטה' });
+            await loadInvalidNames();
         }
 
         async function deleteInvalidName(id) {
             await api(`/api/invalid-names/${id}`, { method: 'DELETE' });
             Toast.fire({ icon: 'success', title: 'השם הוסר' });
-            loadSettings();
+            await loadInvalidNames();
+        }
+        
+        async function loadInvalidNames() {
+            const names = await api('/api/invalid-names');
+            document.getElementById('invalidNamesList').innerHTML = names.map(n => `
+                <div class="flex items-center gap-2 p-2 bg-red-50 rounded-lg">
+                    <span class="text-xs px-1 py-0.5 bg-red-100 text-red-600 rounded">${
+                        n.pattern_type === 'exact' ? 'מדויק' : 
+                        n.pattern_type === 'contains' ? 'מכיל' : 'רגקס'
+                    }</span>
+                    <span class="flex-1 text-red-700 truncate" title="${n.name}">${n.name}</span>
+                    <button onclick="deleteInvalidName(${n.id})" class="text-red-400 hover:text-red-600 text-sm">✕</button>
+                </div>
+            `).join('') || '<p class="text-slate-400 col-span-4 text-center">אין שמות אסורים מוגדרים</p>';
         }
 
         // ==================== CLEANING RULES ====================
