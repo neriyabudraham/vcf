@@ -58,15 +58,6 @@ const getBaseName = (name) => {
     return name.toString().replace(/\s?\(\d+\)$/g, '').trim();
 };
 
-const cleanName = (name) => {
-    if (!name) return '';
-    let n = name.toString().trim();
-    n = n.replace(/\s?\(\d+\)$/g, ''); 
-    if (/^[\.\-\_\*\s\d]+$/.test(n)) return ''; 
-    n = n.replace(/[^א-תa-zA-Z0-9\s\'\"\-\(\)\.]/g, ' ');
-    return n.replace(/\s\s+/g, ' ').trim();
-};
-
 // בדיקה אם שם ברשימת השמות הלא תקינים
 let invalidNamesCache = null;
 async function loadInvalidNames() {
@@ -966,7 +957,7 @@ app.post('/api/groups/:id/add-files', auth, async (req, res) => {
                     continue;
                 }
                 
-                let name = cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
+                let name = await cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
                 if (!name) name = `${defaultName || 'איש קשר'} ${serial++}`;
                 
                 await pool.query(
