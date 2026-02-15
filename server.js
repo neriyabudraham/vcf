@@ -274,7 +274,9 @@ function getDefaultCleaningRules() {
 async function cleanName(name) {
     if (!name) return name;
     
-    const rules = cleaningRulesCache || await loadCleaningRules();
+    // Force reload of rules each time to ensure fresh data
+    await loadCleaningRules();
+    const rules = cleaningRulesCache || [];
     let cleaned = name;
     
     // עבור על כל כלל עד שאין שינוי
@@ -303,18 +305,23 @@ async function cleanName(name) {
                     break;
                     
                 case 'replace':
-                    cleaned = cleaned.split(rule.pattern).join(rule.replacement || '');
+                    // For literal replacement, use split+join
+                    cleaned = cleaned.split(rule.pattern).join(rule.replacement ?? '');
                     break;
                     
                 case 'regex':
                     try {
                         const regex = new RegExp(rule.pattern, 'g');
-                        cleaned = cleaned.replace(regex, rule.replacement || '');
-                    } catch (e) {}
+                        cleaned = cleaned.replace(regex, rule.replacement ?? '');
+                    } catch (e) {
+                        console.log('[CLEAN] Regex error for pattern:', rule.pattern, e.message);
+                    }
                     break;
             }
             
-            if (before !== cleaned) changed = true;
+            if (before !== cleaned) {
+                changed = true;
+            }
         }
     }
     
