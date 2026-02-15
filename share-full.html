@@ -343,7 +343,7 @@
                                         <button onclick="resolveConflict('${c.phone}', '${name.replace(/'/g, "\\'")}')" 
                                                 class="px-4 py-2 rounded-lg font-medium transition ${c.autoSelected === name ? 'bg-indigo-600 text-white' : 'bg-white border hover:border-indigo-400'}">
                                             ${name}
-                                            <span class="text-xs opacity-70">(${c.scores?.[i] || 0})</span>
+                                            <span class="text-xs opacity-70">(${Math.round(c.scores?.[i] || 0)})</span>
                                         </button>
                                     `).join('')}
                                 </div>

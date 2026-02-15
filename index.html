@@ -1590,7 +1590,7 @@
                                                 class="px-4 py-2 bg-white rounded-lg border-2 ${isSelected ? 'border-green-500 bg-green-50 ring-2 ring-green-200' : 'border-slate-200'} font-medium hover:border-indigo-500 hover:bg-indigo-50 transition-all relative">
                                             ${name}
                                             ${isSelected ? '<span class="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full">✓ נבחר</span>' : ''}
-                                            ${score ? '<span class="block text-xs text-slate-400 mt-1">ניקוד: ' + score + '</span>' : ''}
+                                            ${score ? '<span class="block text-xs text-slate-400 mt-1">ניקוד: ' + Math.round(score) + '</span>' : ''}
                                         </button>
                                     `}).join('')}
                                 </div>
