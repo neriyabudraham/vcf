@@ -384,6 +384,7 @@
                             <option value="trim_end">הסר מסוף השם</option>
                             <option value="replace">החלף טקסט</option>
                             <option value="regex">ביטוי רגולרי</option>
+                            <option value="remove_special">הסר תווים מיוחדים/אימוג'ים</option>
                         </select>
                         <input type="text" id="newRulePattern" placeholder="תו/טקסט להסרה..." class="px-4 py-3 rounded-xl border border-slate-200 flex-1">
                         <input type="text" id="newRuleReplacement" placeholder="להחליף ב..." class="px-4 py-3 rounded-xl border border-slate-200 hidden">
@@ -2101,7 +2102,8 @@
                 'trim_start': 'הסר מתחילת השם',
                 'trim_end': 'הסר מסוף השם',
                 'replace': 'החלף',
-                'regex': 'ביטוי רגולרי'
+                'regex': 'ביטוי רגולרי',
+                'remove_special': 'הסר תווים מיוחדים'
             };
             
             document.getElementById('cleaningRulesList').innerHTML = cleaningRules.map((rule, idx) => `
@@ -2109,8 +2111,11 @@
                     <input type="checkbox" ${rule.enabled ? 'checked' : ''} 
                            onchange="toggleCleaningRule(${idx})" 
                            class="w-5 h-5 accent-indigo-600">
-                    <span class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded">${ruleTypeLabels[rule.type]}</span>
-                    <code class="text-sm bg-slate-200 px-2 py-1 rounded">"${rule.pattern}"</code>
+                    <span class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded">${ruleTypeLabels[rule.type] || rule.type}</span>
+                    ${rule.type === 'remove_special' ? 
+                        `<span class="text-sm text-slate-600">למעט:</span><code class="text-sm bg-green-100 px-2 py-1 rounded">${rule.pattern || 'אותיות ורווחים'}</code>` :
+                        `<code class="text-sm bg-slate-200 px-2 py-1 rounded">"${rule.pattern}"</code>`
+                    }
                     ${rule.type === 'replace' || rule.type === 'regex' ? `<span class="text-slate-400">→</span><code class="text-sm bg-green-100 px-2 py-1 rounded">"${rule.replacement || ''}"</code>` : ''}
                     <span class="flex-1 text-slate-600 text-sm">${rule.description || ''}</span>
                     <button onclick="deleteCleaningRule(${idx})" class="text-red-400 hover:text-red-600 text-lg">✕</button>
@@ -2135,14 +2140,17 @@
             const replacement = document.getElementById('newRuleReplacement').value;
             const description = document.getElementById('newRuleDesc').value;
             
-            if (!pattern) return Toast.fire({ icon: 'error', title: 'הזן תו או טקסט' });
+            // עבור remove_special לא חובה pattern (ברירת מחדל: אותיות ורווחים)
+            if (!pattern && type !== 'remove_special') {
+                return Toast.fire({ icon: 'error', title: 'הזן תו או טקסט' });
+            }
             
             const newRule = {
                 id: Date.now(),
                 type,
-                pattern,
+                pattern: type === 'remove_special' ? (pattern || '') : pattern,
                 replacement: (type === 'replace' || type === 'regex') ? replacement : undefined,
-                description,
+                description: description || (type === 'remove_special' ? 'הסר תווים מיוחדים ואימוג\'ים' : ''),
                 enabled: true
             };
             
@@ -2174,6 +2182,9 @@
             if (type === 'replace' || type === 'regex') {
                 replacementInput.classList.remove('hidden');
                 patternInput.placeholder = type === 'regex' ? 'ביטוי רגולרי...' : 'טקסט למציאה...';
+            } else if (type === 'remove_special') {
+                replacementInput.classList.add('hidden');
+                patternInput.placeholder = 'תווים מותרים למעט אותיות (למשל: \' " - רווח)...';
             } else {
                 replacementInput.classList.add('hidden');
                 patternInput.placeholder = type === 'trim_start' ? 'תו להסרה מההתחלה...' : 'תו להסרה מהסוף...';

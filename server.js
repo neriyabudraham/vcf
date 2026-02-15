@@ -317,6 +317,23 @@ async function cleanName(name) {
                         console.log('[CLEAN] Regex error for pattern:', rule.pattern, e.message);
                     }
                     break;
+                    
+                case 'remove_special':
+                    // הסר את כל התווים והאימוג'ים למעט אותיות ורווחים ותווים מותרים
+                    const allowedChars = rule.pattern || '';
+                    // בנה regex שישמור רק על: אותיות עברית, אותיות אנגלית, מספרים, רווחים, ותווים מותרים
+                    let allowedPattern = 'א-תa-zA-Z0-9\\s';
+                    // הוסף תווים מותרים נוספים (בריחה לתווים מיוחדים ב-regex)
+                    for (const char of allowedChars) {
+                        allowedPattern += '\\' + char;
+                    }
+                    try {
+                        const removeRegex = new RegExp(`[^${allowedPattern}]`, 'gu');
+                        cleaned = cleaned.replace(removeRegex, '');
+                    } catch (e) {
+                        console.log('[CLEAN] Remove special error:', e.message);
+                    }
+                    break;
             }
             
             if (before !== cleaned) {
