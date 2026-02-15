@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+*.md
+storage/uploads/*
+!storage/uploads/.gitkeep
+.well-known
+404.html
+502.html

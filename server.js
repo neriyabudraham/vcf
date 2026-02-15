@@ -17,8 +17,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const pool = new Pool({ 
-    user: 'postgres', host: '127.0.0.1', database: 'vcf_db', 
-    password: 'BotomatAdmin2025', port: 3378 
+    user: process.env.DB_USER || 'postgres', 
+    host: process.env.DB_HOST || '127.0.0.1', 
+    database: process.env.DB_NAME || 'vcf_db', 
+    password: process.env.DB_PASSWORD || 'BotomatAdmin2025', 
+    port: parseInt(process.env.DB_PORT) || 3378 
 });
 
 app.use(express.json({limit: '350mb'}));
