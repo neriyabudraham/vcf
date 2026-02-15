@@ -454,11 +454,62 @@ app.post('/api/analyze', auth, async (req, res) => {
         let responseData;
 
         if (groupId) {
-            // טעינת טיוטה קיימת
+            // טעינת טיוטה קיימת - החל כללי ניקוי מעודכנים
             const g = await pool.query('SELECT draft_data, name FROM contact_groups WHERE id = $1', [groupId]);
             if (!g.rows[0]) return res.status(404).json({ error: 'Group not found' });
             responseData = g.rows[0].draft_data;
             responseData.targetGroupName = g.rows[0].name;
+            
+            // החל כללי ניקוי על כל השמות
+            let serial = 1;
+            const phoneMap = new Map();
+            const newConflicts = [];
+            
+            // עדכן את allData עם שמות מנוקים
+            for (const contact of responseData.allData || []) {
+                let cleanedName = await cleanName(contact.name);
+                
+                // אם השם ריק אחרי הניקוי - תן שם דיפולטיבי
+                if (!cleanedName || !cleanedName.trim() || /^\s*\(\d+\)\s*$/.test(cleanedName)) {
+                    cleanedName = `איש קשר ${contact.phone?.slice(-4) || serial++}`;
+                }
+                
+                // בדוק אם השם ברשימה השחורה
+                if (await isInvalidName(cleanedName)) {
+                    cleanedName = `איש קשר ${contact.phone?.slice(-4) || serial++}`;
+                }
+                
+                contact.name = cleanedName;
+                phoneMap.set(contact.phone, contact);
+            }
+            
+            // עדכן קונפליקטים עם שמות מנוקים + חשב ניקוד מחדש
+            for (const conflict of responseData.conflicts || []) {
+                const cleanedNames = [];
+                const newScores = [];
+                
+                for (let i = 0; i < conflict.names.length; i++) {
+                    let cleanedName = await cleanName(conflict.names[i]);
+                    if (!cleanedName || !cleanedName.trim() || /^\s*\(\d+\)\s*$/.test(cleanedName) || await isInvalidName(cleanedName)) {
+                        cleanedName = `איש קשר ${conflict.phone?.slice(-4) || ''}`;
+                    }
+                    cleanedNames.push(cleanedName);
+                    newScores.push(await scoreName(cleanedName));
+                }
+                
+                conflict.names = cleanedNames;
+                conflict.scores = newScores;
+                
+                // בחר את השם הטוב ביותר מחדש
+                const maxScoreIdx = newScores.indexOf(Math.max(...newScores));
+                conflict.autoSelected = cleanedNames[maxScoreIdx];
+                
+                // עדכן גם ב-allData
+                const contact = phoneMap.get(conflict.phone);
+                if (contact) contact.name = conflict.autoSelected;
+            }
+            
+            console.log('[ANALYZE] Re-applied cleaning rules to draft');
         } else {
             // עיבוד חדש
             const phoneMap = new Map();
