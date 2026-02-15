@@ -297,10 +297,17 @@
                             <span>העדף שמות בלי מספרים</span>
                         </label>
                         <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                            <span>אורך מינימלי:</span>
+                            <input type="number" id="rule-minLength" value="2" min="0" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
+                            <span class="text-xs text-slate-400">(אותיות בלבד)</span>
+                        </div>
+                        <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
                             <span>אורך מקסימלי:</span>
                             <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
                         </div>
                     </div>
+                    
+                    <p class="text-sm text-slate-500 mt-2">💡 אורך מינימלי סופר רק אותיות (עברית/אנגלית), לא נקודות, גרשיים או אימוג'ים</p>
                     
                     <button onclick="saveNameRules()" class="btn-primary px-6 py-3 rounded-xl font-bold mt-4">שמור כללים</button>
                 </div>
@@ -1577,6 +1584,7 @@
                 document.getElementById('rule-preferHebrew').checked = rules.preferHebrew !== false;
                 document.getElementById('rule-avoidSpecialChars').checked = rules.avoidSpecialChars !== false;
                 document.getElementById('rule-preferNoNumbers').checked = rules.preferNoNumbers !== false;
+                document.getElementById('rule-minLength').value = rules.minLength || 2;
                 document.getElementById('rule-maxLength').value = rules.maxLength || 20;
                 
                 // טען שמות לא תקינים
@@ -1602,6 +1610,7 @@
                 preferHebrew: document.getElementById('rule-preferHebrew').checked,
                 avoidSpecialChars: document.getElementById('rule-avoidSpecialChars').checked,
                 preferNoNumbers: document.getElementById('rule-preferNoNumbers').checked,
+                minLength: parseInt(document.getElementById('rule-minLength').value) || 2,
                 maxLength: parseInt(document.getElementById('rule-maxLength').value) || 20,
                 allowedChars: ["'", '"', "-", " "]
             };

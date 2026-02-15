@@ -96,21 +96,40 @@ async function loadNameRules() {
     return nameRulesCache;
 }
 
+// ספירת תווים "אמיתיים" בשם (אותיות בלבד, בלי סימנים/אימוג'ים)
+function countRealChars(name) {
+    if (!name) return 0;
+    // רק אותיות עברית, אנגלית ורווחים
+    const realChars = name.match(/[א-תa-zA-Z\s]/g) || [];
+    // הסר רווחים מהספירה
+    return realChars.filter(c => c !== ' ').length;
+}
+
+// בדיקה אם שם קצר מדי
+async function isNameTooShort(name) {
+    const rules = nameRulesCache || await loadNameRules();
+    const minLength = rules.minLength || 0;
+    if (minLength <= 0) return false;
+    return countRealChars(name) < minLength;
+}
+
 // חישוב ציון לשם (ככל שגבוה יותר - השם טוב יותר)
 async function scoreName(name) {
     if (!name || name.trim() === '') return -1000;
     if (await isInvalidName(name)) return -1000;
+    if (await isNameTooShort(name)) return -1000; // שם קצר מדי
     
     const rules = nameRulesCache || await loadNameRules();
     let score = 0;
     const n = name.trim();
+    const realLength = countRealChars(n);
     
     // אורך - עדיפות לארוך יותר אבל לא יותר מדי
     if (rules.preferLonger) {
-        if (n.length <= (rules.maxLength || 20)) {
-            score += n.length * 2;
+        if (realLength <= (rules.maxLength || 20)) {
+            score += realLength * 2;
         } else {
-            score -= (n.length - rules.maxLength) * 3; // קנס על שם ארוך מדי
+            score -= (realLength - rules.maxLength) * 3; // קנס על שם ארוך מדי
         }
     }
     
@@ -222,6 +241,11 @@ async function cleanName(name) {
     
     // אם התוצאה היא רק מספר בסוגריים - החזר ריק
     if (/^\s*\(\d+\)\s*$/.test(result)) return '';
+    
+    // אם השם קצר מדי - החזר ריק
+    const rules = nameRulesCache || await loadNameRules();
+    const minLength = rules.minLength || 0;
+    if (minLength > 0 && countRealChars(result) < minLength) return '';
     
     return result;
 }
