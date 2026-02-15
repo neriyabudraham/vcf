@@ -1758,7 +1758,44 @@
             const data = state.analysisData;
             if (!data) return;
             
-            Swal.fire({ title: 'שומר רשימה...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            const totalContacts = data.allData?.length || 0;
+            const stages = [
+                { name: 'מכין נתונים...', percent: 5 },
+                { name: 'מנקה שמות...', percent: 15 },
+                { name: 'בודק כפילויות...', percent: 25 },
+                { name: 'שומר לדאטאבייס...', percent: 40 },
+                { name: 'מעבד אנשי קשר...', percent: 70 },
+                { name: 'מסיים...', percent: 95 }
+            ];
+            let currentStage = 0;
+            
+            // הצג חלון עם פרוגרס בר
+            Swal.fire({
+                title: 'שומר רשימה...',
+                html: `
+                    <div class="text-right space-y-4">
+                        <p class="text-slate-600">${totalContacts.toLocaleString()} אנשי קשר</p>
+                        <div class="w-full bg-slate-200 rounded-full h-4 overflow-hidden">
+                            <div id="saveProgress" class="bg-gradient-to-r from-indigo-500 to-purple-600 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <p id="saveStage" class="text-sm text-slate-500">מתחיל...</p>
+                        <p id="savePercent" class="text-2xl font-bold text-indigo-600">0%</p>
+                    </div>
+                `,
+                allowOutsideClick: false,
+                showConfirmButton: false
+            });
+            
+            // אנימציית פרוגרס
+            const progressInterval = setInterval(() => {
+                if (currentStage < stages.length) {
+                    const stage = stages[currentStage];
+                    document.getElementById('saveProgress').style.width = stage.percent + '%';
+                    document.getElementById('saveStage').textContent = stage.name;
+                    document.getElementById('savePercent').textContent = stage.percent + '%';
+                    currentStage++;
+                }
+            }, totalContacts > 10000 ? 3000 : 1000);
             
             try {
                 const result = await api('/api/finalize', {
@@ -1770,7 +1807,6 @@
                         contacts: data.allData,
                         fileIds: data.fileIds,
                         stats: data.stats,
-                        // שמירת נתוני הניתוח לצפייה בשיתוף מלא
                         analysisData: {
                             conflicts: data.conflicts,
                             autoResolved: data.autoResolved,
@@ -1779,18 +1815,28 @@
                     })
                 });
                 
-                Swal.fire({ 
-                    icon: 'success', 
-                    title: 'הרשימה נשמרה!', 
-                    text: `${result.contactsCount?.toLocaleString() || 0} אנשי קשר נשמרו`,
-                    confirmButtonText: 'צפה ברשימה'
-                }).then(() => {
-                    state.selectedFiles = [];
-                    state.analysisData = null;
-                    viewGroup(data.groupId);
-                });
+                clearInterval(progressInterval);
+                
+                // השלם ל-100%
+                document.getElementById('saveProgress').style.width = '100%';
+                document.getElementById('saveStage').textContent = 'הושלם!';
+                document.getElementById('savePercent').textContent = '100%';
+                
+                setTimeout(() => {
+                    Swal.fire({ 
+                        icon: 'success', 
+                        title: 'הרשימה נשמרה!', 
+                        text: `${result.contactsCount?.toLocaleString() || 0} אנשי קשר נשמרו`,
+                        confirmButtonText: 'צפה ברשימה'
+                    }).then(() => {
+                        state.selectedFiles = [];
+                        state.analysisData = null;
+                        viewGroup(data.groupId);
+                    });
+                }, 500);
                 
             } catch (err) {
+                clearInterval(progressInterval);
                 Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
             }
         }
