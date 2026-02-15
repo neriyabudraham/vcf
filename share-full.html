@@ -554,7 +554,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contacts: state.data.allData,
-                        stats: state.data.stats
+                        stats: state.data.stats,
+                        analysisData: {
+                            conflicts: state.data.conflicts,
+                            autoResolved: state.data.autoResolved,
+                            rejectedContacts: state.data.rejectedContacts
+                        }
                     })
                 });
                 

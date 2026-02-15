@@ -1678,7 +1678,13 @@
                         groupName: data.targetGroupName,
                         contacts: data.allData,
                         fileIds: data.fileIds,
-                        stats: data.stats
+                        stats: data.stats,
+                        // שמירת נתוני הניתוח לצפייה בשיתוף מלא
+                        analysisData: {
+                            conflicts: data.conflicts,
+                            autoResolved: data.autoResolved,
+                            rejectedContacts: data.rejectedContacts
+                        }
                     })
                 });
                 

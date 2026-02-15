@@ -783,7 +783,7 @@ app.post('/api/draft/:id/save', auth, async (req, res) => {
 // ==================== FINALIZE GROUP ====================
 
 app.post('/api/finalize', auth, async (req, res) => {
-    const { groupId, groupName, contacts, fileIds, stats } = req.body;
+    const { groupId, groupName, contacts, fileIds, stats, analysisData } = req.body;
     
     console.log(`[FINALIZE] Starting: groupId=${groupId}, contacts=${contacts?.length}, groupName=${groupName}`);
     
@@ -818,10 +818,19 @@ app.post('/api/finalize', auth, async (req, res) => {
             });
         }
 
+        // שמירת נתוני הניתוח לצפייה עתידית בשיתוף מלא
+        const fullDraftData = {
+            allData: finalContacts.map(c => ({ name: c.name, phone: c.phone, email: c.email, sourceFile: c.sourceFile, sourceFileId: c.sourceFileId, originalData: c.originalData })),
+            conflicts: analysisData?.conflicts || [],
+            autoResolved: analysisData?.autoResolved || [],
+            rejectedContacts: analysisData?.rejectedContacts || [],
+            stats: stats || {}
+        };
+        
         // עדכון הקבוצה
         await pool.query(
-            `UPDATE contact_groups SET name = $1, status = 'ready', draft_data = NULL, stats = $3, version = 1 WHERE id = $2`,
-            [groupName, groupId, JSON.stringify(stats || {})]
+            `UPDATE contact_groups SET name = $1, status = 'ready', draft_data = $3, stats = $4, version = 1 WHERE id = $2`,
+            [groupName, groupId, JSON.stringify(fullDraftData), JSON.stringify(stats || {})]
         );
         
         // שמירת גרסה ראשונה
@@ -1622,7 +1631,7 @@ app.post('/api/public/finalize/:token', async (req, res) => {
         const groupId = await verifyFullShare(req.params.token);
         if (!groupId) return res.status(403).json({ error: 'אין הרשאה' });
         
-        const { contacts, stats } = req.body;
+        const { contacts, stats, analysisData } = req.body;
         console.log(`[PUBLIC FINALIZE] Starting: groupId=${groupId}, contacts=${contacts?.length}`);
         
         const resolutions = await pool.query('SELECT phone, resolved_name FROM import_resolutions');
@@ -1688,10 +1697,19 @@ app.post('/api/public/finalize/:token', async (req, res) => {
             );
         }
         
+        // שמירת נתוני הניתוח לצפייה עתידית
+        const fullDraftData = {
+            allData: finalContacts.map(c => ({ name: c.name, phone: c.phone, email: c.email, sourceFile: c.sourceFile, sourceFileId: c.sourceFileId, originalData: c.originalData })),
+            conflicts: analysisData?.conflicts || [],
+            autoResolved: analysisData?.autoResolved || [],
+            rejectedContacts: analysisData?.rejectedContacts || [],
+            stats: stats || {}
+        };
+        
         // עדכן סטטוס
         await pool.query(
-            `UPDATE contact_groups SET status = 'ready', draft_data = NULL, stats = $2 WHERE id = $1`,
-            [groupId, JSON.stringify(stats || {})]
+            `UPDATE contact_groups SET status = 'ready', draft_data = $2, stats = $3 WHERE id = $1`,
+            [groupId, JSON.stringify(fullDraftData), JSON.stringify(stats || {})]
         );
         
         console.log(`[PUBLIC FINALIZE] Complete: ${finalContacts.length} contacts saved`);
