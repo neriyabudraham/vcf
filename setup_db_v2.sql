@@ -33,12 +33,12 @@ CREATE TABLE IF NOT EXISTS contact_groups (
 CREATE TABLE IF NOT EXISTS contacts (
     id SERIAL PRIMARY KEY,
     group_id INT REFERENCES contact_groups(id) ON DELETE CASCADE,
-    full_name VARCHAR(500),
+    full_name TEXT,
     phone VARCHAR(50),
     phone_normalized VARCHAR(50),
-    email VARCHAR(255),
+    email TEXT,
     source_file_id INT REFERENCES uploaded_files(id),
-    source_file_name VARCHAR(500),
+    source_file_name TEXT,
     original_data JSONB DEFAULT '{}', -- כל הנתונים המקוריים מה-VCF
     metadata JSONB DEFAULT '{}',
     tags TEXT[] DEFAULT '{}',
@@ -206,4 +206,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contacts' AND column_name='duplicate_of') THEN
         ALTER TABLE contacts ADD COLUMN duplicate_of INT REFERENCES contacts(id);
     END IF;
+    
+    -- הגדלת עמודות קיימות ל-TEXT
+    ALTER TABLE contacts ALTER COLUMN full_name TYPE TEXT;
+    ALTER TABLE contacts ALTER COLUMN email TYPE TEXT;
+    ALTER TABLE contacts ALTER COLUMN source_file_name TYPE TEXT;
 END $$;
