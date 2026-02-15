@@ -148,19 +148,28 @@
                 const data = await res.json();
                 
                 if (res.ok) {
-                    // עדכן את השדה בטבלה
-                    const input = document.getElementById(`name-${id}`);
-                    if (input) input.value = data.newName;
-                    
-                    // עדכן במערך
-                    const contact = allContacts.find(c => c.id === id);
-                    if (contact) contact.full_name = data.newName;
+                    let msg = 'השם הוחלף';
+                    if (data.updatedCount > 1) {
+                        msg = `${data.updatedCount} אנשי קשר עודכנו`;
+                    }
                     
                     Toast.fire({ 
                         icon: 'success', 
-                        title: 'השם הוחלף',
+                        title: msg,
                         text: data.addedToBlacklist ? `"${data.addedToBlacklist}" נוסף לרשימה שחורה` : ''
                     });
+                    
+                    // רענן את כל הרשימה אם עודכנו יותר מאחד
+                    if (data.updatedCount > 1) {
+                        await loadGroup();
+                    } else {
+                        // עדכן רק את השדה הספציפי
+                        const input = document.getElementById(`name-${id}`);
+                        if (input) input.value = data.newName;
+                        
+                        const contact = allContacts.find(c => c.id === id);
+                        if (contact) contact.full_name = data.newName;
+                    }
                 }
             } catch (err) {
                 Toast.fire({ icon: 'error', title: 'שגיאה' });

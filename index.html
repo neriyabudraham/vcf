@@ -582,16 +582,26 @@
             try {
                 const data = await api(`/api/contacts/${id}/clear`, { method: 'POST' });
                 
-                // עדכן את השדה בטבלה
-                const row = document.getElementById(`contact-row-${id}`);
-                const input = row?.querySelector('input[type="text"]');
-                if (input) input.value = data.newName;
+                let msg = 'השם הוחלף';
+                if (data.updatedCount > 1) {
+                    msg = `${data.updatedCount} אנשי קשר עודכנו`;
+                }
                 
                 Toast.fire({ 
                     icon: 'success', 
-                    title: 'השם הוחלף',
+                    title: msg,
                     text: data.addedToBlacklist ? `"${data.addedToBlacklist}" נוסף לרשימה שחורה` : ''
                 });
+                
+                // רענן את הרשימה אם יש יותר מאחד שעודכן
+                if (data.updatedCount > 1) {
+                    loadContacts();
+                } else {
+                    // עדכן רק את השדה הספציפי
+                    const row = document.getElementById(`contact-row-${id}`);
+                    const input = row?.querySelector('input[type="text"]');
+                    if (input) input.value = data.newName;
+                }
             } catch (err) {
                 Toast.fire({ icon: 'error', title: 'שגיאה' });
             }

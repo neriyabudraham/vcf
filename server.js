@@ -1212,12 +1212,12 @@ app.post('/api/public/fix-duplicates/:token', async (req, res) => {
     }
 });
 
-// API ציבורי - מחיקת שם והוספה לרשימה שחורה
+// API ציבורי - מחיקת שם והוספה לרשימה שחורה + עדכון כל הדומים
 app.post('/api/public/clear-name/:token/:contactId', async (req, res) => {
     try {
         // וודא שאיש הקשר שייך לקבוצה עם הטוקן הזה
         const verify = await pool.query(`
-            SELECT c.id, c.full_name, c.phone FROM contacts c 
+            SELECT c.id, c.full_name, c.phone, c.group_id FROM contacts c 
             JOIN contact_groups g ON c.group_id = g.id 
             WHERE g.share_token = $1 AND c.id = $2
         `, [req.params.token, req.params.contactId]);
@@ -1226,22 +1226,41 @@ app.post('/api/public/clear-name/:token/:contactId', async (req, res) => {
         
         const oldName = verify.rows[0].full_name;
         const phone = verify.rows[0].phone || '';
+        const groupId = verify.rows[0].group_id;
         const defaultName = `איש קשר ${phone.slice(-4)}`;
         
         // עדכן את השם לדיפולטיבי
         await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [defaultName, req.params.contactId]);
         
-        // הוסף את השם הישן לרשימה השחורה (אם לא ריק ולא כבר קיים)
-        if (oldName && oldName.trim() && !oldName.startsWith('איש קשר')) {
+        let updatedCount = 1;
+        const baseName = getBaseName(oldName);
+        
+        // הוסף את השם הישן לרשימה השחורה ועדכן את כל הדומים
+        if (baseName && baseName.trim() && !baseName.startsWith('איש קשר')) {
             await pool.query(
                 'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-                [oldName.trim(), 'exact']
+                [baseName.trim(), 'exact']
             );
-            // אפס קאש
             invalidNamesCache = null;
+            
+            // מצא ועדכן את כל אנשי הקשר עם שם דומה
+            const similarContacts = await pool.query(
+                `SELECT id, full_name, phone FROM contacts 
+                 WHERE group_id = $1 AND id != $2 AND (
+                     full_name = $3 OR 
+                     full_name ~ ('^' || $3 || '\\s*\\(\\d+\\)$')
+                 )`,
+                [groupId, req.params.contactId, baseName]
+            );
+            
+            for (const c of similarContacts.rows) {
+                const newDefault = `איש קשר ${c.phone?.slice(-4) || Math.random().toString().slice(2, 6)}`;
+                await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [newDefault, c.id]);
+                updatedCount++;
+            }
         }
         
-        res.json({ success: true, newName: defaultName, addedToBlacklist: oldName });
+        res.json({ success: true, newName: defaultName, addedToBlacklist: baseName, updatedCount });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1287,29 +1306,50 @@ app.put('/api/contacts/:id', auth, async (req, res) => {
     }
 });
 
-// מחיקת שם והוספה לרשימה שחורה
+// מחיקת שם והוספה לרשימה שחורה + עדכון כל אנשי הקשר עם אותו שם
 app.post('/api/contacts/:id/clear', auth, async (req, res) => {
     try {
-        const contact = await pool.query('SELECT full_name, phone FROM contacts WHERE id = $1', [req.params.id]);
+        const contact = await pool.query('SELECT full_name, phone, group_id FROM contacts WHERE id = $1', [req.params.id]);
         if (!contact.rows[0]) return res.status(404).json({ error: 'Not found' });
         
         const oldName = contact.rows[0].full_name;
         const phone = contact.rows[0].phone || '';
+        const groupId = contact.rows[0].group_id;
         const defaultName = `איש קשר ${phone.slice(-4)}`;
         
-        // עדכן את השם
+        // עדכן את השם הנוכחי
         await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [defaultName, req.params.id]);
         
-        // הוסף לרשימה שחורה
-        if (oldName && oldName.trim() && !oldName.startsWith('איש קשר')) {
+        let updatedCount = 1;
+        const baseName = getBaseName(oldName);
+        
+        // הוסף לרשימה שחורה והחלף את כל אנשי הקשר עם שם דומה
+        if (baseName && baseName.trim() && !baseName.startsWith('איש קשר')) {
             await pool.query(
                 'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-                [oldName.trim(), 'exact']
+                [baseName.trim(), 'exact']
             );
             invalidNamesCache = null;
+            
+            // מצא את כל אנשי הקשר עם אותו שם או שם עם (X) באותה קבוצה
+            const similarContacts = await pool.query(
+                `SELECT id, full_name, phone FROM contacts 
+                 WHERE group_id = $1 AND id != $2 AND (
+                     full_name = $3 OR 
+                     full_name ~ ('^' || $3 || '\\s*\\(\\d+\\)$')
+                 )`,
+                [groupId, req.params.id, baseName]
+            );
+            
+            // עדכן את כולם לשמות דיפולטיביים
+            for (const c of similarContacts.rows) {
+                const newDefault = `איש קשר ${c.phone?.slice(-4) || Math.random().toString().slice(2, 6)}`;
+                await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [newDefault, c.id]);
+                updatedCount++;
+            }
         }
         
-        res.json({ success: true, newName: defaultName, addedToBlacklist: oldName });
+        res.json({ success: true, newName: defaultName, addedToBlacklist: baseName, updatedCount });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
