@@ -55,48 +55,96 @@ const normalizePhone = (p) => {
 
 function parseVcf(content) {
     const contacts = [];
+    
+    // נרמול סופי שורות - המרה לפורמט אחיד
+    content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
     // פיצול לפי כרטיסים
-    content.split(/BEGIN:VCARD/gi).forEach(card => {
-        if (!card.includes('END:VCARD')) return;
+    const cards = content.split(/^BEGIN:VCARD$/gim);
+    
+    for (const card of cards) {
+        if (!card.includes('END:VCARD')) continue;
+        
+        // חיבור שורות מקופלות (Line Folding - RFC 6350)
+        // סוג 1: שורה שמתחילה ברווח או טאב היא המשך של הקודמת
+        // סוג 2: Quoted-Printable - שורה שמסתיימת ב-= ממשיכה בשורה הבאה
+        let unfoldedCard = card
+            .replace(/=\n/g, '')           // QP soft line break
+            .replace(/\n[ \t]/g, '');      // Standard vCard line folding
+        
+        const lines = unfoldedCard.split('\n');
         let entry = { 'Name': '', 'Phone': '' };
-        
-        // ניקוי שורות מקופלות (Line Folding) וחיבור שורות QP
-        const cleanCard = card.replace(/=\r?\n/g, '').replace(/\r?\n\s/g, ' ');
-        const lines = cleanCard.split(/\r?\n/);
+        let phones = [];
 
-        lines.forEach(line => {
-            const upper = line.toUpperCase().trim();
-            // טיפול בשדות שם (גם FN וגם N)
-            if (upper.startsWith('FN') || upper.startsWith('N')) {
-                const isFN = upper.startsWith('FN');
-                let val = line.substring(line.indexOf(':') + 1).trim();
-                
-                // פענוח Quoted-Printable אם קיים
-                if (upper.includes('QUOTED-PRINTABLE')) {
-                    try {
-                        // החלפת = ב-% לצורך פענוח URI
-                        val = decodeURIComponent(val.replace(/=/g, '%'));
-                    } catch(e) {
-                        // פולבק במקרה של שגיאה
-                        val = val.replace(/=[0-9A-F]{2}/gi, '');
-                    }
-                }
-                
-                // אם זה שדה N (Last;First;...), ננקה את ה-Semicolons
-                if (!isFN) {
-                    val = val.split(';').filter(part => part.trim()).join(' ');
-                }
-                
-                // FN מקבל עדיפות, אם אין FN ניקח את ה-N
-                if (isFN || !entry['Name']) entry['Name'] = val;
-            } else if (upper.startsWith('TEL')) {
-                entry['Phone'] = line.substring(line.lastIndexOf(':') + 1).replace(/\D/g, '');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            
+            const upper = trimmed.toUpperCase();
+            
+            // בדיקה ספציפית לשדה FN (Full Name)
+            if (upper.startsWith('FN:') || upper.startsWith('FN;')) {
+                let val = trimmed.substring(trimmed.indexOf(':') + 1).trim();
+                val = decodeVcfValue(val, upper);
+                if (val) entry['Name'] = val;
             }
-        });
+            // בדיקה ספציפית לשדה N (Name components) - רק אם מתחיל ב-N: או N;
+            else if ((upper.startsWith('N:') || upper.startsWith('N;')) && !upper.startsWith('NOTE') && !upper.startsWith('NICKNAME')) {
+                let val = trimmed.substring(trimmed.indexOf(':') + 1).trim();
+                val = decodeVcfValue(val, upper);
+                // N הוא בפורמט: Last;First;Middle;Prefix;Suffix
+                val = val.split(';').filter(part => part.trim()).join(' ');
+                // N משמש רק אם אין FN
+                if (val && !entry['Name']) entry['Name'] = val;
+            }
+            // טיפול בטלפונים - איסוף כל המספרים
+            else if (upper.startsWith('TEL:') || upper.startsWith('TEL;')) {
+                let phoneVal = trimmed.substring(trimmed.lastIndexOf(':') + 1);
+                phoneVal = phoneVal.replace(/[^\d+]/g, ''); // שמור רק ספרות ו-+
+                if (phoneVal) phones.push(phoneVal);
+            }
+        }
         
-        if (entry.Phone || entry.Name) contacts.push(entry);
-    });
+        // בחר את הטלפון הראשון שנראה תקין (מעדיף מספרים ישראליים)
+        entry['Phone'] = phones.find(p => /^(\+?972|05)/.test(p)) || phones[0] || '';
+        
+        if (entry.Phone || entry.Name) {
+            contacts.push(entry);
+        }
+    }
+    
     return contacts;
+}
+
+// פונקציה לפענוח ערכים מקודדים (Quoted-Printable, Base64)
+function decodeVcfValue(val, upperLine) {
+    if (!val) return '';
+    
+    // פענוח Quoted-Printable
+    if (upperLine.includes('QUOTED-PRINTABLE') || upperLine.includes('ENCODING=QP')) {
+        try {
+            // שלב 1: החלפת כל =XX ל-%XX
+            const percentEncoded = val.replace(/=([0-9A-F]{2})/gi, '%$1');
+            // שלב 2: פענוח כל המחרוזת ביחד (חשוב ל-UTF-8 מרובה בתים)
+            val = decodeURIComponent(percentEncoded);
+        } catch(e) {
+            // פולבק: נסה לפענח בחלקים
+            try {
+                val = val.replace(/=([0-9A-F]{2})/gi, (match, hex) => {
+                    try {
+                        return String.fromCharCode(parseInt(hex, 16));
+                    } catch (e) {
+                        return '';
+                    }
+                });
+            } catch(e2) {
+                // אם הכל נכשל, פשוט נקה את הקידוד
+                val = val.replace(/=[0-9A-F]{2}/gi, '');
+            }
+        }
+    }
+    
+    return val.trim();
 }
 
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
@@ -143,19 +191,52 @@ app.post('/api/analyze', auth, async (req, res) => {
         const autoResolved = [];
         let serial = parseInt(startSerial) || 1;
 
+        // לוגים לדיבוג
+        let totalParsed = 0;
+        let totalValidPhones = 0;
+        let totalSkippedNoPhone = 0;
+
         for (const item of processingData) {
             const fileRes = await pool.query('SELECT * FROM uploaded_files WHERE id = $1', [item.fileId]);
-            if (!fileRes.rows[0]) continue;
+            if (!fileRes.rows[0]) {
+                console.log(`[ANALYZE] File ID ${item.fileId} not found in DB`);
+                continue;
+            }
             const file = fileRes.rows[0];
-            let rows = file.file_path.toLowerCase().endsWith('.vcf') ? parseVcf(fs.readFileSync(file.file_path, 'utf8')) : [];
-            if (!file.file_path.toLowerCase().endsWith('.vcf')) {
+            
+            console.log(`[ANALYZE] Processing file: ${file.original_name}`);
+            console.log(`[ANALYZE] Mapping: phoneField=${item.mapping?.phoneField}, nameFields=${JSON.stringify(item.mapping?.nameFields)}`);
+            
+            let rows = [];
+            if (file.file_path.toLowerCase().endsWith('.vcf')) {
+                rows = parseVcf(fs.readFileSync(file.file_path, 'utf8'));
+            } else {
                 const stream = fs.createReadStream(file.file_path).pipe(csv());
                 for await (const row of stream) rows.push(row);
             }
+            
+            console.log(`[ANALYZE] Parsed ${rows.length} rows from file`);
+            totalParsed += rows.length;
+            
+            // בדוק את ה-mapping
+            if (!item.mapping || !item.mapping.phoneField) {
+                console.log(`[ANALYZE] WARNING: Missing mapping for file ${file.id}`);
+                continue;
+            }
 
+            let fileValidPhones = 0;
+            let fileSkipped = 0;
+            
             rows.forEach(row => {
-                const phone = normalizePhone(row[item.mapping.phoneField]);
-                if (!phone) return;
+                const rawPhone = row[item.mapping.phoneField];
+                const phone = normalizePhone(rawPhone);
+                
+                if (!phone) {
+                    fileSkipped++;
+                    return;
+                }
+                
+                fileValidPhones++;
                 let name = cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
                 if (!name) name = `${defaultName || 'איש קשר'} ${serial++}`;
 
@@ -172,7 +253,15 @@ app.post('/api/analyze', auth, async (req, res) => {
                     }
                 } else phoneMap.set(phone, name);
             });
+            
+            console.log(`[ANALYZE] File stats: validPhones=${fileValidPhones}, skipped=${fileSkipped}`);
+            totalValidPhones += fileValidPhones;
+            totalSkippedNoPhone += fileSkipped;
         }
+
+        console.log(`[ANALYZE] TOTAL: parsed=${totalParsed}, validPhones=${totalValidPhones}, skipped=${totalSkippedNoPhone}`);
+        console.log(`[ANALYZE] Unique phones in map: ${phoneMap.size}`);
+        console.log(`[ANALYZE] Conflicts: ${conflicts.length}, AutoResolved: ${autoResolved.length}`);
 
         responseData = { 
             conflicts, 
@@ -268,4 +357,37 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
     res.send(out);
 });
 
-app.listen(3377);
+// בדיקת בריאות ופרסר
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// בדיקת פרסר VCF על קובץ קיים
+app.get('/api/test-parse/:fileId', auth, async (req, res) => {
+    try {
+        const fileRes = await pool.query('SELECT * FROM uploaded_files WHERE id = $1', [req.params.fileId]);
+        if (!fileRes.rows[0]) return res.status(404).json({ error: 'File not found' });
+        
+        const file = fileRes.rows[0];
+        const content = fs.readFileSync(file.file_path, 'utf8');
+        const actualVcards = (content.match(/BEGIN:VCARD/gi) || []).length;
+        
+        const parsed = parseVcf(content);
+        const validPhones = parsed.filter(c => normalizePhone(c.Phone)).length;
+        
+        res.json({
+            fileName: file.original_name,
+            fileSize: content.length,
+            actualVcards,
+            parsedContacts: parsed.length,
+            validPhones,
+            sample: parsed.slice(0, 10)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.listen(3377, () => {
+    console.log('[VCF Server] Running on port 3377');
+});
