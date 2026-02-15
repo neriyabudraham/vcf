@@ -231,6 +231,7 @@
                 <div class="flex gap-3 flex-wrap">
                     <button onclick="addFilesToGroup()" class="btn-primary px-4 py-2 rounded-xl font-semibold">➕ הוסף קבצים</button>
                     <button onclick="checkDuplicates()" class="btn-warning px-4 py-2 rounded-xl font-semibold">🔍 בדוק כפילויות</button>
+                    <button onclick="shareGroup()" class="px-4 py-2 rounded-xl font-semibold bg-green-100 text-green-700 hover:bg-green-200">🔗 שתף</button>
                     <button onclick="saveVersion()" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">💾 שמור גרסה</button>
                     <button onclick="exportGroup('csv')" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">📊 CSV</button>
                     <button onclick="exportGroup('vcf')" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">📇 VCF</button>
@@ -729,6 +730,52 @@
 
         function exportGroup(type) {
             window.location.href = `/api/export/${type}/${state.currentGroupId}`;
+        }
+
+        async function shareGroup() {
+            try {
+                const data = await api(`/api/groups/${state.currentGroupId}/share`, { method: 'POST' });
+                const fullUrl = `${window.location.origin}${data.url}`;
+                
+                const result = await Swal.fire({
+                    title: '🔗 לינק שיתוף',
+                    html: `
+                        <div class="text-right space-y-4">
+                            <p class="text-slate-600">כל מי שיקבל את הלינק יוכל:</p>
+                            <ul class="text-sm text-slate-500 space-y-1">
+                                <li>✅ לצפות באנשי הקשר</li>
+                                <li>✅ לערוך שמות</li>
+                                <li>✅ לתקן כפילויות</li>
+                                <li>✅ להוריד קובץ VCF</li>
+                                <li>❌ לא יוכל להוסיף אנשי קשר חדשים</li>
+                            </ul>
+                            <div class="bg-slate-100 rounded-xl p-3">
+                                <input type="text" value="${fullUrl}" readonly 
+                                       id="shareUrlInput"
+                                       class="w-full bg-transparent text-center font-mono text-sm outline-none"
+                                       onclick="this.select()">
+                            </div>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    showDenyButton: true,
+                    confirmButtonText: '📋 העתק לינק',
+                    denyButtonText: '🗑️ בטל שיתוף',
+                    cancelButtonText: 'סגור',
+                    confirmButtonColor: '#6366f1',
+                    denyButtonColor: '#ef4444'
+                });
+                
+                if (result.isConfirmed) {
+                    navigator.clipboard.writeText(fullUrl);
+                    Toast.fire({ icon: 'success', title: 'הלינק הועתק!' });
+                } else if (result.isDenied) {
+                    await api(`/api/groups/${state.currentGroupId}/share`, { method: 'DELETE' });
+                    Toast.fire({ icon: 'success', title: 'השיתוף בוטל' });
+                }
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
         }
 
         // ==================== FILES ====================

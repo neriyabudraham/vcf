@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
 const csv = require('csv-parser');
+const crypto = require('crypto');
 
 const app = express();
 const uploadsDir = path.join(__dirname, 'storage/uploads');
@@ -940,6 +941,164 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
         res.setHeader('Content-Type', req.params.type === 'csv' ? 'text/csv; charset=utf-8' : 'text/vcard; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${groupName}.${req.params.type}"`);
         res.send('\ufeff' + out); // BOM for Excel
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== SHARING ====================
+
+// יצירת/קבלת לינק שיתוף
+app.post('/api/groups/:id/share', auth, async (req, res) => {
+    try {
+        const groupId = req.params.id;
+        let r = await pool.query('SELECT share_token FROM contact_groups WHERE id = $1', [groupId]);
+        
+        let token = r.rows[0]?.share_token;
+        if (!token) {
+            token = crypto.randomBytes(32).toString('hex');
+            await pool.query('UPDATE contact_groups SET share_token = $1 WHERE id = $2', [token, groupId]);
+        }
+        
+        res.json({ token, url: `/share/${token}` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ביטול שיתוף
+app.delete('/api/groups/:id/share', auth, async (req, res) => {
+    try {
+        await pool.query('UPDATE contact_groups SET share_token = NULL WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// דף שיתוף ציבורי
+app.get('/share/:token', async (req, res) => {
+    try {
+        const r = await pool.query('SELECT id FROM contact_groups WHERE share_token = $1', [req.params.token]);
+        if (!r.rows[0]) return res.status(404).send('הקישור לא נמצא או פג תוקף');
+        res.sendFile(path.join(__dirname, 'share.html'));
+    } catch (err) {
+        res.status(500).send('שגיאה');
+    }
+});
+
+// API ציבורי - קבלת פרטי קבוצה
+app.get('/api/public/group/:token', async (req, res) => {
+    try {
+        const g = await pool.query(`
+            SELECT id, name, version, stats, 
+                   to_char(updated_at, 'DD/MM/YYYY HH24:MI') as updated_at_formatted
+            FROM contact_groups WHERE share_token = $1 AND status = 'ready'
+        `, [req.params.token]);
+        
+        if (!g.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        const contacts = await pool.query(
+            'SELECT id, full_name, phone, email FROM contacts WHERE group_id = $1 ORDER BY full_name',
+            [g.rows[0].id]
+        );
+        
+        res.json({ ...g.rows[0], contacts: contacts.rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API ציבורי - עדכון שם איש קשר
+app.put('/api/public/contact/:token/:contactId', async (req, res) => {
+    try {
+        const { full_name } = req.body;
+        if (!full_name || !full_name.trim()) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        
+        // וודא שאיש הקשר שייך לקבוצה עם הטוקן הזה
+        const verify = await pool.query(`
+            SELECT c.id FROM contacts c 
+            JOIN contact_groups g ON c.group_id = g.id 
+            WHERE g.share_token = $1 AND c.id = $2
+        `, [req.params.token, req.params.contactId]);
+        
+        if (!verify.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [full_name.trim(), req.params.contactId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API ציבורי - כפילויות
+app.get('/api/public/duplicates/:token', async (req, res) => {
+    try {
+        const g = await pool.query('SELECT id FROM contact_groups WHERE share_token = $1', [req.params.token]);
+        if (!g.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        const r = await pool.query(`
+            SELECT full_name, array_agg(id) as ids, count(*) as count
+            FROM contacts WHERE group_id = $1
+            GROUP BY full_name HAVING count(*) > 1
+            ORDER BY count DESC, full_name
+        `, [g.rows[0].id]);
+        
+        res.json({ duplicates: r.rows, totalDuplicateNames: r.rows.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API ציבורי - תיקון כפילויות
+app.post('/api/public/fix-duplicates/:token', async (req, res) => {
+    try {
+        const g = await pool.query('SELECT id FROM contact_groups WHERE share_token = $1', [req.params.token]);
+        if (!g.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        const groupId = g.rows[0].id;
+        const dupsRes = await pool.query(`
+            SELECT full_name, array_agg(id ORDER BY id) as ids
+            FROM contacts WHERE group_id = $1
+            GROUP BY full_name HAVING count(*) > 1
+        `, [groupId]);
+        
+        let fixed = 0;
+        for (const dup of dupsRes.rows) {
+            const ids = dup.ids;
+            for (let i = 1; i < ids.length; i++) {
+                const newName = `${dup.full_name} (${i + 1})`;
+                await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [newName, ids[i]]);
+                fixed++;
+            }
+        }
+        
+        res.json({ success: true, fixed });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API ציבורי - ייצוא VCF
+app.get('/api/public/export/:token', async (req, res) => {
+    try {
+        const g = await pool.query('SELECT id, name FROM contact_groups WHERE share_token = $1', [req.params.token]);
+        if (!g.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        const contacts = await pool.query('SELECT full_name, phone, email FROM contacts WHERE group_id = $1', [g.rows[0].id]);
+        
+        let vcf = '';
+        contacts.rows.forEach(c => {
+            vcf += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\nTEL;TYPE=CELL:${c.phone}\n`;
+            if (c.email) vcf += `EMAIL:${c.email}\n`;
+            vcf += `END:VCARD\n`;
+        });
+        
+        res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${g.rows[0].name}.vcf"`);
+        res.send('\ufeff' + vcf);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

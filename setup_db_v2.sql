@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS contact_groups (
     draft_data JSONB,
     stats JSONB DEFAULT '{}', -- סטטיסטיקות מפורטות
     tags TEXT[] DEFAULT '{}',
+    share_token VARCHAR(64) UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -182,6 +183,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contact_groups' AND column_name='updated_at') THEN
         ALTER TABLE contact_groups ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contact_groups' AND column_name='share_token') THEN
+        ALTER TABLE contact_groups ADD COLUMN share_token VARCHAR(64) UNIQUE;
     END IF;
     
     -- contacts

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>רשימת אנשי קשר | VCF Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Heebo', sans-serif; }
+        body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); min-height: 100vh; }
+        .glass-card { background: rgba(255,255,255,0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
+    </style>
+</head>
+<body class="text-slate-800 p-4 md:p-8">
+    <div class="max-w-5xl mx-auto">
+        <!-- Header -->
+        <div class="glass-card rounded-3xl p-6 mb-6">
+            <div class="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                    <h1 id="groupName" class="text-2xl md:text-3xl font-black text-slate-800">טוען...</h1>
+                    <p id="groupInfo" class="text-slate-500"></p>
+                </div>
+                <div class="flex gap-3 flex-wrap">
+                    <button onclick="checkDuplicates()" class="px-4 py-2 bg-amber-100 text-amber-700 rounded-xl font-semibold hover:bg-amber-200">🔍 בדוק כפילויות</button>
+                    <button onclick="downloadVcf()" class="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:shadow-xl">📥 הורד VCF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search -->
+        <div class="glass-card rounded-2xl p-4 mb-6">
+            <input type="text" id="searchInput" placeholder="🔍 חיפוש לפי שם או טלפון..." 
+                   class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                   oninput="filterContacts()">
+        </div>
+
+        <!-- Contacts Table -->
+        <div class="glass-card rounded-2xl p-6">
+            <div id="contactsCount" class="mb-4 text-slate-600"></div>
+            <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                <table class="w-full">
+                    <thead class="bg-slate-50 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-3 text-right font-semibold">#</th>
+                            <th class="px-4 py-3 text-right font-semibold">שם</th>
+                            <th class="px-4 py-3 text-right font-semibold">טלפון</th>
+                            <th class="px-4 py-3 text-right font-semibold">אימייל</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contactsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-6 text-slate-400 text-sm">
+            Powered by VCF Manager Pro
+        </div>
+    </div>
+
+    <script>
+        const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
+        
+        const token = window.location.pathname.split('/').pop();
+        let allContacts = [];
+        
+        async function loadGroup() {
+            try {
+                const res = await fetch(`/api/public/group/${token}`);
+                if (!res.ok) {
+                    document.body.innerHTML = '<div class="min-h-screen flex items-center justify-center text-2xl text-slate-500">הקישור לא נמצא או פג תוקף</div>';
+                    return;
+                }
+                
+                const data = await res.json();
+                allContacts = data.contacts || [];
+                
+                document.getElementById('groupName').textContent = data.name;
+                document.getElementById('groupInfo').textContent = `${allContacts.length.toLocaleString()} אנשי קשר • עודכן ${data.updated_at_formatted}`;
+                
+                renderContacts(allContacts);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        
+        function renderContacts(contacts) {
+            document.getElementById('contactsCount').textContent = `מציג ${contacts.length.toLocaleString()} אנשי קשר`;
+            
+            document.getElementById('contactsBody').innerHTML = contacts.map((c, i) => `
+                <tr class="border-b border-slate-100">
+                    <td class="px-4 py-2 text-slate-400">${i + 1}</td>
+                    <td class="px-4 py-1">
+                        <input type="text" value="${(c.full_name || '').replace(/"/g, '&quot;')}" 
+                               data-id="${c.id}"
+                               class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none font-medium bg-transparent"
+                               onchange="updateName(${c.id}, this.value)"
+                               onkeydown="if(event.key==='Enter') this.blur()">
+                    </td>
+                    <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
+                    <td class="px-4 py-2 text-slate-500">${c.email || '-'}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="4" class="text-center py-8 text-slate-400">אין אנשי קשר</td></tr>';
+        }
+        
+        function filterContacts() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = allContacts.filter(c => 
+                c.full_name?.toLowerCase().includes(search) || 
+                c.phone?.includes(search) ||
+                c.email?.toLowerCase().includes(search)
+            );
+            renderContacts(filtered);
+        }
+        
+        async function updateName(id, newName) {
+            if (!newName || !newName.trim()) {
+                const contact = allContacts.find(c => c.id === id);
+                newName = `איש קשר ${contact?.phone?.slice(-4) || ''}`;
+            }
+            
+            try {
+                const res = await fetch(`/api/public/contact/${token}/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: newName.trim() })
+                });
+                
+                if (res.ok) {
+                    const contact = allContacts.find(c => c.id === id);
+                    if (contact) contact.full_name = newName.trim();
+                    Toast.fire({ icon: 'success', title: 'השם עודכן' });
+                }
+            } catch (err) {
+                Toast.fire({ icon: 'error', title: 'שגיאה בעדכון' });
+            }
+        }
+        
+        async function checkDuplicates() {
+            const res = await fetch(`/api/public/duplicates/${token}`);
+            const data = await res.json();
+            
+            if (!data.duplicates?.length) {
+                return Swal.fire({ icon: 'success', title: 'אין כפילויות!', text: 'כל השמות ייחודיים' });
+            }
+            
+            const result = await Swal.fire({
+                title: `נמצאו ${data.totalDuplicateNames} שמות כפולים`,
+                html: `
+                    <div class="text-right max-h-60 overflow-y-auto">
+                        ${data.duplicates.slice(0, 20).map(d => `
+                            <div class="flex justify-between items-center py-2 border-b">
+                                <span class="font-medium">${d.full_name}</span>
+                                <span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs">${d.count}x</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: '🔧 תקן אוטומטית',
+                cancelButtonText: 'ביטול',
+                confirmButtonColor: '#10b981'
+            });
+            
+            if (result.isConfirmed) {
+                Swal.fire({ title: 'מתקן...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                await fetch(`/api/public/fix-duplicates/${token}`, { method: 'POST' });
+                Swal.fire({ icon: 'success', title: 'הכפילויות תוקנו!' });
+                loadGroup();
+            }
+        }
+        
+        function downloadVcf() {
+            window.location.href = `/api/public/export/${token}`;
+        }
+        
+        loadGroup();
+    </script>
+</body>
+</html>
