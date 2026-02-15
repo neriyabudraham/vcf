@@ -1167,16 +1167,70 @@
             showAnalysisTab('rejected');
         }
 
-        function updateAnalysisName(index, newName) {
-            if (state.analysisData?.allData?.[index]) {
-                // אם השם ריק - תן שם ברירת מחדל
-                if (!newName || !newName.trim()) {
-                    const phone = state.analysisData.allData[index].phone || '';
-                    newName = `איש קשר ${phone.slice(-4)}`;
+        async function updateAnalysisName(index, newName) {
+            if (!state.analysisData?.allData?.[index]) return;
+            
+            const contact = state.analysisData.allData[index];
+            const oldName = contact.name;
+            
+            // אם השם ריק - הוסף לרשימה שחורה ותן שם ברירת מחדל
+            if (!newName || !newName.trim()) {
+                const phone = contact.phone || '';
+                const defaultName = `איש קשר ${phone.slice(-4)}`;
+                
+                // הוסף לרשימה שחורה
+                if (oldName && oldName.trim() && !oldName.startsWith('איש קשר')) {
+                    const baseName = oldName.replace(/\s?\(\d+\)$/g, '').trim();
+                    if (baseName) {
+                        try {
+                            await api('/api/invalid-names', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: baseName, patternType: 'exact' })
+                            });
+                            
+                            // עדכן את כל אנשי הקשר עם שם דומה ב-allData
+                            let updatedCount = 0;
+                            state.analysisData.allData.forEach((c, i) => {
+                                const cBaseName = (c.name || '').replace(/\s?\(\d+\)$/g, '').trim();
+                                if (cBaseName === baseName) {
+                                    const cDefaultName = `איש קשר ${c.phone?.slice(-4) || Math.random().toString().slice(2, 6)}`;
+                                    state.analysisData.allData[i].name = cDefaultName;
+                                    updatedCount++;
+                                }
+                            });
+                            
+                            Toast.fire({ 
+                                icon: 'success', 
+                                title: updatedCount > 1 ? `${updatedCount} אנשי קשר עודכנו` : 'השם עודכן',
+                                text: `"${baseName}" נוסף לרשימה שחורה`
+                            });
+                            
+                            // רענן את הטאב
+                            showAnalysisTab('accepted');
+                            return;
+                        } catch (err) {
+                            console.error('Error adding to blacklist:', err);
+                        }
+                    }
                 }
-                state.analysisData.allData[index].name = newName.trim();
+                
+                contact.name = defaultName;
+                // עדכן את ה-input ישירות
+                const inputs = document.querySelectorAll('#analysisContent input[type="text"]');
+                if (inputs[index - ((state.analysisPage - 1) * 500)]) {
+                    inputs[index - ((state.analysisPage - 1) * 500)].value = defaultName;
+                }
+                Toast.fire({ icon: 'success', title: 'השם עודכן לברירת מחדל' });
+            } else {
+                contact.name = newName.trim();
                 Toast.fire({ icon: 'success', title: 'השם עודכן' });
             }
+        }
+
+        async function clearAnalysisName(index) {
+            // קרא לפונקציה הכללית עם שם ריק
+            await updateAnalysisName(index, '');
         }
 
         function showAnalysisTab(tab) {
@@ -1212,6 +1266,7 @@
                                 <th class="px-4 py-3 text-right font-semibold">שם</th>
                                 <th class="px-4 py-3 text-right font-semibold">טלפון</th>
                                 <th class="px-4 py-3 text-right font-semibold">מקור</th>
+                                <th class="px-4 py-3 text-center font-semibold w-16"></th>
                             </tr></thead>
                             <tbody>${(data.allData || []).slice(start, end).map((c, i) => `
                                 <tr class="border-b border-slate-100">
@@ -1224,6 +1279,9 @@
                                     </td>
                                     <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
                                     <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
+                                    <td class="px-4 py-2 text-center">
+                                        <button onclick="clearAnalysisName(${start + i})" class="text-red-400 hover:text-red-600 text-lg" title="מחק שם והוסף לרשימה שחורה">🗑️</button>
+                                    </td>
                                 </tr>
                             `).join('')}</tbody>
                         </table>
