@@ -121,8 +121,9 @@
         
         async function updateName(id, newName) {
             if (!newName || !newName.trim()) {
-                const contact = allContacts.find(c => c.id === id);
-                newName = `איש קשר ${contact?.phone?.slice(-4) || ''}`;
+                // שם ריק - קרא ל-clearName שגם מוסיף לרשימה שחורה
+                await clearName(id);
+                return;
             }
             
             try {

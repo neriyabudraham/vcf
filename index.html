@@ -562,7 +562,9 @@
 
         async function updateContactName(id, newName) {
             if (!newName || !newName.trim()) {
-                return clearContactName(id);
+                // שם ריק - קרא ל-clear שגם מוסיף לרשימה שחורה
+                await clearContactName(id);
+                return;
             }
             
             try {
@@ -593,17 +595,18 @@
                     text: data.addedToBlacklist ? `"${data.addedToBlacklist}" נוסף לרשימה שחורה` : ''
                 });
                 
+                // תמיד עדכן את השדה הספציפי מיד
+                const row = document.getElementById(`contact-row-${id}`);
+                const input = row?.querySelector('input[type="text"]');
+                if (input) input.value = data.newName;
+                
                 // רענן את הרשימה אם יש יותר מאחד שעודכן
                 if (data.updatedCount > 1) {
                     loadContacts();
-                } else {
-                    // עדכן רק את השדה הספציפי
-                    const row = document.getElementById(`contact-row-${id}`);
-                    const input = row?.querySelector('input[type="text"]');
-                    if (input) input.value = data.newName;
                 }
             } catch (err) {
                 Toast.fire({ icon: 'error', title: 'שגיאה' });
+                loadContacts(); // רענן במקרה של שגיאה
             }
         }
 

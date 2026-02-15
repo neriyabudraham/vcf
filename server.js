@@ -1317,6 +1317,8 @@ app.post('/api/contacts/:id/clear', auth, async (req, res) => {
         const groupId = contact.rows[0].group_id;
         const defaultName = `איש קשר ${phone.slice(-4)}`;
         
+        console.log(`[CLEAR] Contact ${req.params.id}: oldName="${oldName}", phone="${phone}", newName="${defaultName}"`);
+        
         // עדכן את השם הנוכחי
         await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [defaultName, req.params.id]);
         
@@ -1325,6 +1327,7 @@ app.post('/api/contacts/:id/clear', auth, async (req, res) => {
         
         // הוסף לרשימה שחורה והחלף את כל אנשי הקשר עם שם דומה
         if (baseName && baseName.trim() && !baseName.startsWith('איש קשר')) {
+            console.log(`[CLEAR] Adding to blacklist: "${baseName.trim()}"`);
             await pool.query(
                 'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
                 [baseName.trim(), 'exact']
