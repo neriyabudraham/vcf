@@ -484,10 +484,20 @@ app.post('/api/analyze', auth, async (req, res) => {
             responseData = g.rows[0].draft_data;
             responseData.targetGroupName = g.rows[0].name;
             
+            // רענן קאש של כללים
+            nameRulesCache = null;
+            cleaningRulesCache = null;
+            invalidNamesCache = null;
+            await loadNameRules();
+            await loadCleaningRules();
+            await loadInvalidNames();
+            
             // החל כללי ניקוי על כל השמות
             let serial = 1;
             const phoneMap = new Map();
             const newConflicts = [];
+            
+            console.log(`[ANALYZE] Re-applying rules to ${responseData.allData?.length || 0} contacts`);
             
             // עדכן את allData עם שמות מנוקים
             for (const contact of responseData.allData || []) {
@@ -503,6 +513,11 @@ app.post('/api/analyze', auth, async (req, res) => {
                     cleanedName = `איש קשר ${contact.phone?.slice(-4) || serial++}`;
                 }
                 
+                // בדוק אם השם קצר מדי
+                if (await isNameTooShort(cleanedName)) {
+                    cleanedName = `איש קשר ${contact.phone?.slice(-4) || serial++}`;
+                }
+                
                 contact.name = cleanedName;
                 phoneMap.set(contact.phone, contact);
             }
@@ -514,7 +529,8 @@ app.post('/api/analyze', auth, async (req, res) => {
                 
                 for (let i = 0; i < conflict.names.length; i++) {
                     let cleanedName = await cleanName(conflict.names[i]);
-                    if (!cleanedName || !cleanedName.trim() || /^\s*\(\d+\)\s*$/.test(cleanedName) || await isInvalidName(cleanedName)) {
+                    if (!cleanedName || !cleanedName.trim() || /^\s*\(\d+\)\s*$/.test(cleanedName) || 
+                        await isInvalidName(cleanedName) || await isNameTooShort(cleanedName)) {
                         cleanedName = `איש קשר ${conflict.phone?.slice(-4) || ''}`;
                     }
                     cleanedNames.push(cleanedName);
