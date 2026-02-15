@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>VCF Manager Pro | Elite</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Assistant', sans-serif; background: #f8fafc; color: #1e293b; }
+        .luxury-card { background: white; border-radius: 2.5rem; border: 1px solid #f1f5f9; box-shadow: 0 10px 40px -10px rgba(0,0,0,0.04); transition: 0.3s; position: relative; }
+        .draft-card { background: #fffcf0; border: 2px dashed #f59e0b; }
+        .card-mapped { border: 2.5px solid #10b981 !important; background: #f0fdf4; }
+        .mapped-badge { position: absolute; top: -12px; left: 24px; background: #10b981; color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2); }
+        .draft-badge { background: #f59e0b; color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.7rem; font-weight: 900; }
+        
+        .btn-choice { 
+            background: white; border: 2px solid #f1f5f9; padding: 12px 24px; border-radius: 1.2rem; 
+            font-weight: 800; transition: 0.3s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+        }
+        .btn-choice:hover { border-color: #6366f1; transform: translateY(-2px); }
+        
+        /* ברירת מחדל אפרורית */
+        .btn-auto-selected { background: #94a3b8 !important; color: white !important; border-color: #64748b !important; }
+        
+        /* בחירה ידנית כחולה */
+        .btn-manual-selected { background: #4f46e5 !important; color: white !important; border-color: #4338ca !important; }
+
+        .btn-process {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: white; padding: 1.25rem 3rem; border-radius: 1.5rem;
+            font-weight: 900; font-size: 1.25rem; box-shadow: 0 20px 40px -15px rgba(79, 70, 229, 0.4);
+            transition: 0.4s;
+        }
+        .btn-process:hover { transform: translateY(-4px); box-shadow: 0 25px 50px -12px rgba(79, 70, 229, 0.5); }
+
+        .progress-bar { width: 0%; height: 8px; background: #4f46e5; border-radius: 10px; transition: 0.3s; }
+        .swal2-popup { border-radius: 3rem !important; }
+    </style>
+</head>
+<body class="min-h-screen text-right">
+    <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b px-12 py-6 flex justify-between items-center shadow-sm">
+        <div class="flex items-center gap-4">
+            <div class="bg-indigo-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl">V</div>
+            <h1 class="text-xl font-black italic">BOTOMAT <span class="text-indigo-600">PRO</span></h1>
+        </div>
+        <div class="flex gap-8">
+            <button onclick="showView('dashboard')" class="font-bold text-slate-500 hover:text-indigo-600">רשימות</button>
+            <button onclick="showView('archive')" class="font-bold text-slate-500 hover:text-indigo-600">ארכיון</button>
+            <button onclick="document.getElementById('fileFiles').click()" class="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-100">ייבוא חדש</button>
+        </div>
+        <input type="file" id="fileFiles" multiple class="hidden" onchange="handleUpload(event)">
+    </nav>
+
+    <div id="uploadOverlay" class="hidden fixed bottom-10 left-10 z-[200] bg-white p-8 rounded-[3rem] shadow-2xl border w-96 animate-in slide-in-from-left">
+        <h4 class="font-black text-indigo-900 mb-2">סורק ומעלה קבצים...</h4>
+        <div class="bg-slate-100 rounded-full h-3 mb-3 overflow-hidden"><div id="globalProgress" class="progress-bar"></div></div>
+        <p id="uploadDetail" class="text-xs text-slate-400 font-bold italic"></p>
+    </div>
+
+    <main class="max-w-7xl mx-auto p-12 text-right">
+        <section id="dashboard-view" class="space-y-10 animate-in fade-in">
+            <h2 class="text-4xl font-black text-slate-800 tracking-tight">רשימות וטיוטות</h2>
+            <div id="groups-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"></div>
+        </section>
+
+        <section id="archive-view" class="hidden space-y-12 text-right">
+            <div class="bg-slate-900 rounded-[3.5rem] p-12 text-white flex flex-col xl:flex-row items-center justify-between gap-10 shadow-3xl">
+                <div class="flex-1 space-y-4">
+                    <h2 class="text-3xl font-black italic text-indigo-400">המכבסה והארכיון</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="text" id="defaultName" placeholder="שם דיפולטיבי (לזיהוי 'זבל')..." class="bg-white/10 p-5 rounded-2xl text-white outline-none border border-white/20">
+                        <input type="number" id="startSerial" placeholder="מספר רץ מ..." value="1" class="bg-white/10 p-5 rounded-2xl text-white outline-none border border-white/20">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-indigo-300 mb-2 uppercase italic tracking-widest">מילות התעלמות (הפרד בפסיק):</label>
+                        <input type="text" id="ignoreKeywords" placeholder="לדוגמא: מספר נוסף, זמני, אחר" class="w-full bg-white/10 p-4 rounded-xl text-white outline-none border border-white/20">
+                    </div>
+                </div>
+                <div class="flex flex-col gap-4">
+                    <input type="text" id="targetGroupName" placeholder="שם הקבוצה..." class="bg-white/20 p-6 rounded-[2rem] w-80 text-white outline-none border border-white/30 focus:bg-white/40">
+                    <button onclick="startAnalysis()" class="btn-process">עבד נבחרים ⚡</button>
+                </div>
+            </div>
+            <div id="file-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"></div>
+        </section>
+
+        <section id="resolution-view" class="hidden space-y-10">
+            <div class="bg-white p-10 rounded-[3rem] shadow-xl border flex justify-between items-center text-right">
+                <div>
+                    <h2 id="currentImportName" class="text-3xl font-black text-indigo-600 mb-1"></h2>
+                    <p id="conflictSummary" class="text-slate-400 font-bold italic"></p>
+                </div>
+                <button onclick="finalizeProcessUI()" class="bg-indigo-600 text-white px-12 py-4 rounded-2xl font-black text-xl shadow-lg">שמור הכל וסיים ✅</button>
+            </div>
+            <div class="bg-white rounded-[2.5rem] shadow-xl border overflow-hidden"><table class="w-full text-right"><thead class="bg-slate-50 border-b"><tr><th class="p-8 font-black uppercase text-slate-400 italic">טלפון</th><th class="p-8 font-black uppercase text-slate-400 italic text-right">בחר שם לשמירה</th></tr></thead><tbody id="resolution-body"></tbody></table></div>
+            <div class="mt-20 space-y-6"><h3 class="text-xl font-black text-green-600 italic text-right">איחודים אוטומטיים (שמות דומים שמוזגו)</h3><div id="auto-resolve-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div></div>
+        </section>
+
+        <section id="contacts-view" class="hidden space-y-10">
+            <div class="flex justify-between items-center bg-white p-10 rounded-[2.5rem] shadow-sm border text-right">
+                <div><h2 id="currentGroupName" class="text-3xl font-black text-indigo-600 mb-1"></h2><p id="currentCount" class="text-slate-400 font-bold italic"></p></div>
+                <div class="flex gap-4"><button onclick="exportData('csv')" class="bg-slate-100 px-6 py-3 rounded-xl font-bold">CSV</button><button onclick="exportData('vcf')" class="bg-slate-100 px-6 py-3 rounded-xl font-bold">VCF</button><button onclick="showView('dashboard')" class="bg-indigo-50 text-indigo-600 px-8 py-3 rounded-xl font-bold">חזור</button></div>
+            </div>
+            <div class="bg-white rounded-[2.5rem] shadow-xl border overflow-hidden"><table class="w-full text-right" id="contactsTable"><thead class="bg-slate-50 border-b"><tr><th class="p-8 text-right">שם מלא</th><th class="p-8 text-left">טלפון</th></tr></thead><tbody id="contacts-body"></tbody></table></div>
+        </section>
+    </main>
+
+    <div id="mappingModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-8 text-right">
+        <div class="bg-white w-full max-w-5xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+            <div class="p-10 border-b flex justify-between items-center bg-slate-50"><h3 id="mappingTitle" class="text-2xl font-black italic text-indigo-900">מיפוי נתונים</h3><button onclick="closeMapping()" class="text-4xl text-slate-300 hover:text-red-500">&times;</button></div>
+            <div id="mappingContent" class="p-10 overflow-auto flex-1 space-y-10"></div>
+            <div class="p-10 border-t bg-slate-50 flex justify-end"><button onclick="saveAndMark()" class="bg-indigo-600 text-white px-12 py-4 rounded-2xl font-black shadow-xl">שמור וצרף ✅</button></div>
+        </div>
+    </div>
+
+    <script>
+        let archive = [], selected = [], mappings = {}, fileSamples = {}, currentFileId = null, currentGroupId = null, analysisData = null;
+        const resolvedMap = new Map();
+        const manualResolved = new Set();
+        const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+
+        async function handleUpload(e) {
+            const files = e.target.files; if(!files.length) return;
+            document.getElementById('uploadOverlay').classList.remove('hidden');
+            const progress = document.getElementById('globalProgress');
+            const detail = document.getElementById('uploadDetail');
+            for (let i = 0; i < files.length; i++) {
+                progress.style.width = Math.round(((i) / files.length) * 100) + '%';
+                detail.innerText = `מעלה (${i+1}/${files.length}): ${files[i].name}`;
+                const fd = new FormData(); fd.append('file', files[i]);
+                const res = await fetch('/api/upload', { method: 'POST', body: fd });
+                const uploadedFile = await res.json();
+                let hArr = Array.isArray(uploadedFile.headers) ? uploadedFile.headers : JSON.parse(uploadedFile.headers || '[]');
+                fileSamples[uploadedFile.id] = uploadedFile.sample;
+                const autoP = hArr.find(h => /phone|tel|נייד|טלפון/i.test(h)) || hArr[0];
+                const autoN = hArr.find(h => /name|fn|שם/i.test(h)) || hArr[0];
+                mappings[uploadedFile.id] = { nameFields: [autoN], phoneField: autoP };
+                if(hArr.length === 2 && !selected.includes(uploadedFile.id)) selected.push(uploadedFile.id);
+                await loadArchive(); showView('archive');
+            }
+            progress.style.width = '100%';
+            setTimeout(() => document.getElementById('uploadOverlay').classList.add('hidden'), 1500);
+        }
+
+        async function loadArchive() {
+            const res = await fetch('/api/files'); archive = await res.json();
+            document.getElementById('file-list').innerHTML = archive.map(f => {
+                const isMapped = mappings[f.id] && mappings[f.id].nameFields.length > 0;
+                return `
+                <div class="luxury-card p-10 flex flex-col justify-between h-80 relative ${isMapped ? 'card-mapped ring-4 ring-green-100' : ''}">
+                    ${isMapped ? '<span class="mapped-badge">מופה</span>' : ''}
+                    <div class="flex justify-between items-start"><div class="p-4 bg-indigo-50 text-indigo-600 rounded-2xl text-2xl font-black italic shadow-inner">FILE</div><input type="checkbox" onchange="toggleFile(${f.id})" ${selected.includes(f.id) ? 'checked' : ''} class="w-8 h-8 rounded-xl accent-indigo-600 cursor-pointer"></div>
+                    <h3 class="text-xl font-black truncate text-slate-800">${f.original_name}</h3>
+                    <div class="flex justify-between items-center pt-4 border-t"><button onclick="openMapping(${f.id})" class="text-indigo-600 font-bold hover:underline">הגדר מיפוי ⚓</button><button onclick="deleteFile(${f.id})" class="text-red-300 font-bold text-xs hover:underline">מחק</button></div>
+                </div>`;
+            }).join('');
+        }
+
+        function openMapping(id) {
+            currentFileId = id; const f = archive.find(x => x.id === id); const sample = fileSamples[id] || [];
+            let hArr = Array.isArray(f.headers) ? f.headers : JSON.parse(f.headers || '[]');
+            document.getElementById('mappingTitle').innerText = f.original_name;
+            document.getElementById('mappingContent').innerHTML = `
+                <div class="grid grid-cols-2 gap-10 bg-indigo-50 p-10 rounded-[2.5rem] border shadow-inner">
+                    <div><label class="block font-black text-indigo-900 mb-4 italic text-right">בחר עמודות לשם:</label><div class="flex flex-wrap gap-2 flex-row-reverse">${hArr.map(h => `<label class="bg-white px-4 py-2 rounded-xl border text-xs cursor-pointer flex items-center gap-2 shadow-sm"><input type="checkbox" onchange="toggleName(${id}, '${h}')" ${mappings[id].nameFields.includes(h) ? 'checked' : ''}> ${h}</label>`).join('')}</div></div>
+                    <div><label class="block font-black text-indigo-900 mb-4 italic text-right">עמודת טלפון:</label><select onchange="mappings[${id}].phoneField = this.value" class="w-full p-4 rounded-xl shadow-sm font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-400">${hArr.map(h => `<option value="${h}" ${mappings[id].phoneField === h ? 'selected' : ''}>${h}</option>`).join('')}</select></div>
+                </div>
+                <div class="mt-8 border rounded-[2rem] overflow-hidden bg-white shadow-sm"><table class="w-full text-sm text-right"><thead class="bg-slate-50 italic"><tr>${hArr.map(h => `<th class="p-5 border-b text-slate-400 font-black">${h}</th>`).join('')}</tr></thead><tbody>${sample.map(row => `<tr>${hArr.map(h => `<td class="p-5 border-b text-slate-600 font-bold">${row[h] || ''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+            document.getElementById('mappingModal').classList.remove('hidden');
+        }
+
+        function toggleName(id, h) { const arr = mappings[id].nameFields; const i = arr.indexOf(h); if(i > -1) arr.splice(i, 1); else arr.push(h); }
+        function saveAndMark() { if(!selected.includes(currentFileId)) selected.push(currentFileId); closeMapping(); loadArchive(); }
+        function toggleFile(id) { const i = selected.indexOf(id); if(i > -1) selected.splice(i, 1); else selected.push(id); loadArchive(); }
+
+        async function startAnalysis(idFromDashboard = null) {
+            const groupNameInput = document.getElementById('targetGroupName').value;
+            let payload = idFromDashboard ? { groupId: idFromDashboard } : { processingData: selected.map(id => ({ fileId: id, mapping: mappings[id] })), defaultName: document.getElementById('defaultName').value, startSerial: document.getElementById('startSerial').value, targetGroupName: groupNameInput };
+            
+            Swal.fire({ title: 'מנתח נתונים...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+            const res = await fetch('/api/analyze', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            analysisData = await res.json(); Swal.close();
+            currentGroupId = analysisData.groupId;
+            
+            document.getElementById('currentImportName').innerText = analysisData.targetGroupName;
+            resolvedMap.clear(); manualResolved.clear();
+
+            // מנגנון בחירה חכמה עם התעלמות ממילות מפתח
+            const ignoreList = document.getElementById('ignoreKeywords').value.split(',').map(s => s.trim()).filter(s => s);
+
+            analysisData.conflicts.forEach(c => {
+                // סנן שמות שמכילים מילות מפתח
+                const filteredNames = c.names.filter(n => !ignoreList.some(k => n.includes(k)));
+                // וודא שיש שם קצר (לפחות 2 תווים) שנשאר אחרי הסינון
+                const validAlternatives = filteredNames.filter(n => n.length >= 2);
+
+                let defaultChoice;
+                if (validAlternatives.length > 0) {
+                    // בחר את הארוך ביותר מבין ה"תקינים"
+                    defaultChoice = validAlternatives.reduce((a, b) => a.length >= b.length ? a : b);
+                } else {
+                    // אם כולם מכילים מילות מפתח, חזור לברירת מחדל אבסולוטית (הארוך ביותר)
+                    defaultChoice = c.names.reduce((a, b) => a.length >= b.length ? a : b);
+                }
+
+                resolvedMap.set(c.phone, c.saved || defaultChoice);
+                if(c.saved) manualResolved.add(c.phone);
+            });
+
+            renderConflicts(); renderAutoResolved(); showView('resolution');
+        }
+
+        function renderConflicts() {
+            document.getElementById('conflictSummary').innerText = `נמצאו ${analysisData.conflicts.length} קונפליקטים בשמות.`;
+            document.getElementById('resolution-body').innerHTML = analysisData.conflicts.map((c, i) => {
+                const currentSelection = resolvedMap.get(c.phone);
+                const isManual = manualResolved.has(c.phone);
+                
+                return `
+                <tr class="border-b transition-all hover:bg-slate-50 text-right"><td class="p-8 font-black text-indigo-600 text-lg">${c.phone}</td><td class="p-8 text-right"><div class="flex gap-4 flex-wrap justify-start">
+                    ${c.names.map(n => {
+                        let btnClass = "btn-choice";
+                        if(currentSelection === n) btnClass += isManual ? " btn-manual-selected" : " btn-auto-selected";
+                        return `<button onclick="resolveSingle(${i}, '${n}')" class="${btnClass}">${n}</button>`;
+                    }).join('')}
+                    <input type="text" value="${isManual && !c.names.includes(currentSelection) ? currentSelection : ''}" placeholder="שם אחר..." onchange="resolveSingle(${i}, this.value)" class="p-4 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-400 w-48 shadow-inner bg-slate-50 text-right">
+                </div></td></tr>`;
+            }).join('');
+        }
+
+        function renderAutoResolved() {
+            document.getElementById('auto-resolve-list').innerHTML = analysisData.autoResolved.map(a => `<div class="auto-resolve-item shadow-sm text-right"><span class="font-bold text-indigo-900">${a.phone}</span><span class="font-black text-green-600">${a.name} <span class="text-xs text-slate-300">(אוחד)</span></span></div>`).join('');
+        }
+
+        async function resolveSingle(i, name) {
+            const phone = analysisData.conflicts[i].phone;
+            resolvedMap.set(phone, name);
+            manualResolved.add(phone);
+            await fetch('/api/resolve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ phone, name }) });
+            renderConflicts();
+            Toast.fire({ icon: 'success', title: 'הבחירה עודכנה' });
+        }
+
+        async function finalizeProcessUI() {
+            Swal.fire({ title: 'מייבא נתונים...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+            await fetch('/api/finalize', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ groupId: currentGroupId, groupName: analysisData.targetGroupName, contacts: analysisData.allData, fileIds: analysisData.fileIds }) });
+            Swal.fire({ icon: 'success', title: 'הצלחה!', text: 'הרשימה מוכנה לשימוש.' }).then(() => location.reload());
+        }
+
+        async function viewContacts(id, name) {
+            currentGroupId = id; document.getElementById('currentGroupName').innerText = name;
+            const res = await fetch(`/api/groups/${id}/contacts`); const data = await res.json();
+            document.getElementById('currentCount').innerText = `${data.length} נמענים סה"כ`;
+            document.getElementById('contacts-body').innerHTML = data.map(c => `<tr><td class="p-8 border-b font-black text-slate-800">${c.full_name}</td><td class="p-8 border-b text-slate-500 italic font-bold text-left">${c.phone}</td></tr>`).join('');
+            showView('contacts');
+        }
+
+        function exportData(type) { window.location.href = `/api/export/${type}/${currentGroupId}`; }
+
+        async function loadDashboard() {
+            const res = await fetch('/api/groups'); const data = await res.json();
+            document.getElementById('groups-list').innerHTML = data.map(g => `
+                <div class="luxury-card p-12 cursor-pointer transition-all hover:scale-[1.02] ${g.status === 'draft' ? 'draft-card' : ''}" onclick="${g.status === 'draft' ? `startAnalysis(${g.id})` : `viewContacts(${g.id}, '${g.name}')`}">
+                    <div class="flex justify-between items-start mb-8"><div class="p-5 bg-indigo-50 text-indigo-600 rounded-[1.8rem] text-4xl font-black italic shadow-inner">R</div>${g.status === 'draft' ? '<span class="draft-badge animate-pulse">טיוטה פתוחה</span>' : ''}</div>
+                    <h3 class="text-2xl font-black mb-1 text-slate-800">${g.name}</h3>
+                    <p class="text-indigo-600 font-black text-4xl">${g.count} <span class="text-xs text-slate-300 block uppercase tracking-widest mt-2">נמענים</span></p>
+                    <div class="flex gap-4 mt-10"><button onclick="event.stopPropagation(); deleteGroup(${g.id})" class="text-red-300 font-bold text-sm hover:text-red-600 transition-all underline">מחק</button></div>
+                </div>`).join('');
+        }
+
+        function showView(v) { ['dashboard', 'archive', 'contacts', 'resolution'].forEach(view => document.getElementById(view+'-view').classList.add('hidden')); document.getElementById(v+'-view').classList.remove('hidden'); }
+        function closeMapping() { document.getElementById('mappingModal').classList.add('hidden'); }
+        async function deleteFile(id) { const r = await Swal.fire({title:'למחוק?', icon:'warning', showCancelButton:true, confirmButtonColor: '#ef4444'}); if(r.isConfirmed) { await fetch('/api/files/'+id, {method:'DELETE'}); loadArchive(); } }
+        async function deleteGroup(id) { const r = await Swal.fire({title:'למחוק?', icon:'warning', showCancelButton:true, confirmButtonColor: '#ef4444'}); if(r.isConfirmed) { await fetch('/api/groups/'+id, {method:'DELETE'}); loadDashboard(); } }
+
+        loadDashboard(); loadArchive();
+    </script>
+</body>
+</html>
