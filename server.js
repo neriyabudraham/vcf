@@ -218,7 +218,12 @@ async function cleanName(name) {
         }
     }
     
-    return cleaned.trim();
+    const result = cleaned.trim();
+    
+    // אם התוצאה היא רק מספר בסוגריים - החזר ריק
+    if (/^\s*\(\d+\)\s*$/.test(result)) return '';
+    
+    return result;
 }
 
 // בחירת השם הטוב ביותר מרשימה
@@ -241,9 +246,15 @@ async function chooseBestName(names) {
 }
 
 // יצירת שם ייחודי עם (X) אם צריך
-function makeUniqueName(name, existingNames) {
+function makeUniqueName(name, existingNames, phone = '') {
     if (!name) return name;
-    const baseName = getBaseName(name);
+    let baseName = getBaseName(name);
+    
+    // אם השם ריק או רק מספרים בסוגריים - תן שם דיפולטיבי
+    if (!baseName || /^\s*\(\d+\)\s*$/.test(baseName)) {
+        baseName = `איש קשר ${phone ? phone.slice(-4) : Math.random().toString().slice(2, 6)}`;
+    }
+    
     if (!existingNames.has(baseName.toLowerCase())) {
         existingNames.add(baseName.toLowerCase());
         return baseName;
@@ -644,14 +655,16 @@ app.post('/api/finalize', auth, async (req, res) => {
         for (const c of contacts) {
             let name = resMap.get(c.phone) || c.name;
             
-            // בדיקה אם השם לא תקין - החלף בשם ברירת מחדל
-            if (await isInvalidName(name)) {
+            // בדיקה אם השם לא תקין או ריק - החלף בשם ברירת מחדל
+            if (!name || !name.trim() || await isInvalidName(name) || /^\s*\(\d+\)\s*$/.test(name)) {
                 const baseName = getBaseName(name);
-                name = baseName && !await isInvalidName(baseName) ? baseName : `איש קשר ${c.phone.slice(-4)}`;
+                name = baseName && baseName.trim() && !await isInvalidName(baseName) && !/^\s*\(\d+\)\s*$/.test(baseName) 
+                    ? baseName 
+                    : `איש קשר ${c.phone.slice(-4)}`;
             }
             
             // וודא שם ייחודי עם (X) אם צריך
-            name = makeUniqueName(name, usedNames);
+            name = makeUniqueName(name, usedNames, c.phone);
             
             finalContacts.push({ 
                 phone: c.phone, 
