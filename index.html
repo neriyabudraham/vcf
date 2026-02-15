@@ -1327,18 +1327,33 @@
         }
 
         async function resolveConflict(phone, name, btn) {
-            document.querySelectorAll(`button[onclick*="${phone}"]`).forEach(b => {
-                b.classList.remove('border-indigo-500', 'bg-indigo-100');
-            });
-            btn.classList.add('border-indigo-500', 'bg-indigo-100');
+            // עדכון הסטייט המקומי
+            if (state.analysisData?.conflicts) {
+                const conflict = state.analysisData.conflicts.find(c => c.phone === phone);
+                if (conflict) {
+                    conflict.autoSelected = name;
+                }
+            }
             
+            // עדכון השם ב-allData
+            if (state.analysisData?.allData) {
+                const contact = state.analysisData.allData.find(c => c.phone === phone);
+                if (contact) {
+                    contact.name = name;
+                }
+            }
+            
+            // עדכון בשרת
             await api('/api/resolve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, name })
             });
             
-            Toast.fire({ icon: 'success', title: 'הבחירה נשמרה' });
+            // רינדור מחדש של הקונפליקטים
+            showAnalysisTab('conflicts');
+            
+            Toast.fire({ icon: 'success', title: `נבחר: ${name}` });
         }
 
         async function finalizeGroup() {
