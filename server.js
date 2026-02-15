@@ -161,16 +161,36 @@ app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
     try {
         const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
         let rows = [];
+        let parsedCount = 0;
+        
+        console.log(`[UPLOAD] Processing file: ${originalName}`);
+        
         if (req.file.originalname.toLowerCase().endsWith('.vcf')) {
-            rows = parseVcf(fs.readFileSync(req.file.path, 'utf8'));
+            const content = fs.readFileSync(req.file.path, 'utf8');
+            rows = parseVcf(content);
+            parsedCount = rows.length;
+            console.log(`[UPLOAD] VCF parsed: ${parsedCount} contacts`);
         } else {
             const stream = fs.createReadStream(req.file.path).pipe(csv());
-            for await (const row of stream) { rows.push(row); if(rows.length > 300) break; }
+            for await (const row of stream) { 
+                rows.push(row); 
+                parsedCount++;
+            }
+            console.log(`[UPLOAD] CSV parsed: ${parsedCount} rows`);
         }
+        
         const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
         const dbFile = await pool.query('INSERT INTO uploaded_files (original_name, file_path, headers) VALUES ($1, $2, $3) RETURNING id, original_name, headers', [originalName, req.file.path, JSON.stringify(headers)]);
-        res.json({ ...dbFile.rows[0], sample: rows.slice(0, 10) });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+        
+        res.json({ 
+            ...dbFile.rows[0], 
+            sample: rows.slice(0, 10),
+            parsedCount 
+        });
+    } catch (err) { 
+        console.error(`[UPLOAD] Error:`, err);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 app.get('/api/files', auth, async (req, res) => {

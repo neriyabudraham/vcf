@@ -52,10 +52,16 @@
         <input type="file" id="fileFiles" multiple class="hidden" onchange="handleUpload(event)">
     </nav>
 
-    <div id="uploadOverlay" class="hidden fixed bottom-10 left-10 z-[200] bg-white p-8 rounded-[3rem] shadow-2xl border w-96 animate-in slide-in-from-left">
-        <h4 class="font-black text-indigo-900 mb-2">סורק ומעלה קבצים...</h4>
-        <div class="bg-slate-100 rounded-full h-3 mb-3 overflow-hidden"><div id="globalProgress" class="progress-bar"></div></div>
-        <p id="uploadDetail" class="text-xs text-slate-400 font-bold italic"></p>
+    <div id="uploadOverlay" class="hidden fixed bottom-10 left-10 z-[200] bg-white p-8 rounded-[3rem] shadow-2xl border w-[28rem] animate-in slide-in-from-left">
+        <h4 class="font-black text-indigo-900 mb-4">מעלה קבצים...</h4>
+        <div id="uploadFilesList" class="space-y-3 max-h-60 overflow-y-auto mb-4"></div>
+        <div class="border-t pt-3">
+            <div class="flex justify-between text-xs text-slate-500 mb-1">
+                <span id="uploadTotalText">סה"כ: 0/0 קבצים</span>
+                <span id="uploadTotalPercent">0%</span>
+            </div>
+            <div class="bg-slate-100 rounded-full h-2 overflow-hidden"><div id="globalProgress" class="progress-bar"></div></div>
+        </div>
     </div>
 
     <main class="max-w-7xl mx-auto p-12 text-right">
@@ -123,24 +129,137 @@
         async function handleUpload(e) {
             const files = e.target.files; if(!files.length) return;
             document.getElementById('uploadOverlay').classList.remove('hidden');
-            const progress = document.getElementById('globalProgress');
-            const detail = document.getElementById('uploadDetail');
+            const filesList = document.getElementById('uploadFilesList');
+            const globalProgress = document.getElementById('globalProgress');
+            const totalText = document.getElementById('uploadTotalText');
+            const totalPercent = document.getElementById('uploadTotalPercent');
+            
+            // יצירת רשימת קבצים עם progress bars
+            filesList.innerHTML = Array.from(files).map((f, i) => `
+                <div id="upload-item-${i}" class="bg-slate-50 rounded-xl p-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm font-bold text-slate-700 truncate max-w-[200px]" title="${f.name}">${f.name}</span>
+                        <span id="upload-status-${i}" class="text-xs font-bold text-slate-400">ממתין...</span>
+                    </div>
+                    <div class="bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div id="upload-progress-${i}" class="h-full bg-indigo-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-xs text-slate-400 mt-1">
+                        <span id="upload-size-${i}">${formatSize(f.size)}</span>
+                        <span id="upload-percent-${i}">0%</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            let completedFiles = 0;
+            const totalFiles = files.length;
+            
             for (let i = 0; i < files.length; i++) {
-                progress.style.width = Math.round(((i) / files.length) * 100) + '%';
-                detail.innerText = `מעלה (${i+1}/${files.length}): ${files[i].name}`;
-                const fd = new FormData(); fd.append('file', files[i]);
-                const res = await fetch('/api/upload', { method: 'POST', body: fd });
-                const uploadedFile = await res.json();
-                let hArr = Array.isArray(uploadedFile.headers) ? uploadedFile.headers : JSON.parse(uploadedFile.headers || '[]');
-                fileSamples[uploadedFile.id] = uploadedFile.sample;
-                const autoP = hArr.find(h => /phone|tel|נייד|טלפון/i.test(h)) || hArr[0];
-                const autoN = hArr.find(h => /name|fn|שם/i.test(h)) || hArr[0];
-                mappings[uploadedFile.id] = { nameFields: [autoN], phoneField: autoP };
-                if(hArr.length === 2 && !selected.includes(uploadedFile.id)) selected.push(uploadedFile.id);
-                await loadArchive(); showView('archive');
+                const file = files[i];
+                const progressBar = document.getElementById(`upload-progress-${i}`);
+                const statusEl = document.getElementById(`upload-status-${i}`);
+                const percentEl = document.getElementById(`upload-percent-${i}`);
+                const itemEl = document.getElementById(`upload-item-${i}`);
+                
+                statusEl.innerText = 'מעלה...';
+                statusEl.className = 'text-xs font-bold text-indigo-600';
+                itemEl.classList.add('ring-2', 'ring-indigo-300');
+                
+                try {
+                    const uploadedFile = await uploadFileWithProgress(file, (percent) => {
+                        progressBar.style.width = percent + '%';
+                        percentEl.innerText = percent + '%';
+                        // עדכון progress כללי
+                        const overallPercent = Math.round(((completedFiles + percent/100) / totalFiles) * 100);
+                        globalProgress.style.width = overallPercent + '%';
+                        totalPercent.innerText = overallPercent + '%';
+                    });
+                    
+                    // הצלחה
+                    completedFiles++;
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('bg-indigo-500');
+                    progressBar.classList.add('bg-green-500');
+                    percentEl.innerText = '100%';
+                    statusEl.innerText = `✓ ${uploadedFile.parsedCount || 0} אנשי קשר`;
+                    statusEl.className = 'text-xs font-bold text-green-600';
+                    itemEl.classList.remove('ring-indigo-300');
+                    itemEl.classList.add('ring-green-300');
+                    
+                    // עיבוד התוצאה
+                    let hArr = Array.isArray(uploadedFile.headers) ? uploadedFile.headers : JSON.parse(uploadedFile.headers || '[]');
+                    fileSamples[uploadedFile.id] = uploadedFile.sample;
+                    const autoP = hArr.find(h => /phone|tel|נייד|טלפון/i.test(h)) || hArr[0];
+                    const autoN = hArr.find(h => /name|fn|שם/i.test(h)) || hArr[0];
+                    mappings[uploadedFile.id] = { nameFields: [autoN], phoneField: autoP };
+                    if(hArr.length === 2 && !selected.includes(uploadedFile.id)) selected.push(uploadedFile.id);
+                    
+                } catch (err) {
+                    progressBar.classList.remove('bg-indigo-500');
+                    progressBar.classList.add('bg-red-500');
+                    statusEl.innerText = '✗ שגיאה';
+                    statusEl.className = 'text-xs font-bold text-red-600';
+                    itemEl.classList.remove('ring-indigo-300');
+                    itemEl.classList.add('ring-red-300');
+                    completedFiles++;
+                }
+                
+                totalText.innerText = `סה"כ: ${completedFiles}/${totalFiles} קבצים`;
+                const overallPercent = Math.round((completedFiles / totalFiles) * 100);
+                globalProgress.style.width = overallPercent + '%';
+                totalPercent.innerText = overallPercent + '%';
             }
-            progress.style.width = '100%';
-            setTimeout(() => document.getElementById('uploadOverlay').classList.add('hidden'), 1500);
+            
+            await loadArchive(); 
+            showView('archive');
+            
+            globalProgress.style.width = '100%';
+            globalProgress.classList.add('bg-green-500');
+            setTimeout(() => {
+                document.getElementById('uploadOverlay').classList.add('hidden');
+                globalProgress.classList.remove('bg-green-500');
+            }, 2000);
+        }
+        
+        function uploadFileWithProgress(file, onProgress) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const fd = new FormData();
+                fd.append('file', file);
+                
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        onProgress(percent);
+                    }
+                });
+                
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            resolve(JSON.parse(xhr.responseText));
+                        } catch (e) {
+                            reject(new Error('Invalid response'));
+                        }
+                    } else {
+                        reject(new Error(`Upload failed: ${xhr.status}`));
+                    }
+                });
+                
+                xhr.addEventListener('error', () => reject(new Error('Network error')));
+                xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+                
+                xhr.open('POST', '/api/upload');
+                xhr.send(fd);
+            });
+        }
+        
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
         async function loadArchive() {
