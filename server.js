@@ -95,7 +95,9 @@ function parseVcf(content) {
                 val = val.split(';').filter(part => part.trim()).join(' ');
                 if (val && !entry.Name) entry.Name = val;
             }
-            else if (upper.startsWith('TEL:') || upper.startsWith('TEL;')) {
+            else if (upper.startsWith('TEL:') || upper.startsWith('TEL;') || 
+                     upper.match(/^ITEM\d*\.TEL/) || upper.startsWith('X-TEL') ||
+                     upper.startsWith('X-PHONE') || upper.includes('.TEL:') || upper.includes('.TEL;')) {
                 let phoneVal = trimmed.substring(trimmed.lastIndexOf(':') + 1);
                 phoneVal = phoneVal.replace(/[^\d+]/g, '');
                 if (phoneVal) phones.push(phoneVal);
@@ -817,6 +819,7 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
         const parsed = parseVcf(content);
         let validPhones = 0, rejectedPhones = 0;
         const rejectionReasons = {};
+        const rejectedSamples = [];
         
         parsed.forEach(c => {
             const result = normalizePhone(c.Phone);
@@ -825,6 +828,17 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
             } else {
                 rejectedPhones++;
                 rejectionReasons[result.reason] = (rejectionReasons[result.reason] || 0) + 1;
+                if (rejectedSamples.length < 20) rejectedSamples.push(c);
+            }
+        });
+        
+        // מצא את כל שמות השדות ב-VCF
+        const fieldNames = new Set();
+        const unfoldedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n[ \t]/g, '');
+        unfoldedContent.split('\n').forEach(line => {
+            const match = line.match(/^([A-Z][A-Z0-9\-]*)/i);
+            if (match && !['BEGIN', 'END', 'VERSION'].includes(match[1].toUpperCase())) {
+                fieldNames.add(match[1].toUpperCase().split(';')[0]);
             }
         });
         
@@ -836,7 +850,9 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
             validPhones,
             rejectedPhones,
             rejectionReasons,
-            sample: parsed.slice(0, 10)
+            fieldNames: [...fieldNames],
+            sample: parsed.slice(0, 10),
+            rejectedSamples
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
