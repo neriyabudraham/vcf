@@ -537,17 +537,33 @@ app.post('/api/analyze', auth, async (req, res) => {
                     newScores.push(await scoreName(cleanedName));
                 }
                 
-                conflict.names = cleanedNames;
-                conflict.scores = newScores;
+                // הסר שמות כפולים
+                const uniqueNames = [];
+                const uniqueScores = [];
+                const uniqueSources = [];
+                for (let i = 0; i < cleanedNames.length; i++) {
+                    if (!uniqueNames.includes(cleanedNames[i])) {
+                        uniqueNames.push(cleanedNames[i]);
+                        uniqueScores.push(newScores[i]);
+                        uniqueSources.push(conflict.sources?.[i] || '');
+                    }
+                }
+                
+                conflict.names = uniqueNames;
+                conflict.scores = uniqueScores;
+                conflict.sources = uniqueSources;
                 
                 // בחר את השם הטוב ביותר מחדש
-                const maxScoreIdx = newScores.indexOf(Math.max(...newScores));
-                conflict.autoSelected = cleanedNames[maxScoreIdx];
+                const maxScoreIdx = uniqueScores.indexOf(Math.max(...uniqueScores));
+                conflict.autoSelected = uniqueNames[maxScoreIdx];
                 
                 // עדכן גם ב-allData
                 const contact = phoneMap.get(conflict.phone);
                 if (contact) contact.name = conflict.autoSelected;
             }
+            
+            // הסר קונפליקטים עם שם אחד בלבד (אחרי דדופליקציה)
+            responseData.conflicts = (responseData.conflicts || []).filter(c => c.names.length > 1);
             
             console.log('[ANALYZE] Re-applied cleaning rules to draft');
         } else {
