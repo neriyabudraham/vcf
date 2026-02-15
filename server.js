@@ -586,10 +586,24 @@ app.get('/api/files', auth, async (req, res) => {
 
 app.delete('/api/files/:id', auth, async (req, res) => {
     try {
-        const fRes = await pool.query('DELETE FROM uploaded_files WHERE id = $1 RETURNING file_path', [req.params.id]);
-        if (fRes.rows[0] && fs.existsSync(fRes.rows[0].file_path)) fs.unlinkSync(fRes.rows[0].file_path);
+        const fileId = req.params.id;
+        console.log(`[DELETE FILE] Deleting file ${fileId}`);
+        
+        // נתק הפניות מאנשי קשר
+        await pool.query('UPDATE contacts SET source_file_id = NULL WHERE source_file_id = $1', [fileId]);
+        
+        // מחק את הקובץ
+        const fRes = await pool.query('DELETE FROM uploaded_files WHERE id = $1 RETURNING file_path', [fileId]);
+        
+        // מחק את הקובץ מהדיסק
+        if (fRes.rows[0]?.file_path && fs.existsSync(fRes.rows[0].file_path)) {
+            try { fs.unlinkSync(fRes.rows[0].file_path); } catch (e) { /* ignore */ }
+        }
+        
+        console.log(`[DELETE FILE] File ${fileId} deleted successfully`);
         res.json({ success: true });
     } catch (err) {
+        console.error('[DELETE FILE] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1151,28 +1165,35 @@ app.get('/api/groups/:id/contacts', auth, async (req, res) => {
 });
 
 app.delete('/api/groups/:id', auth, async (req, res) => {
+    const groupId = req.params.id;
+    console.log(`[DELETE GROUP] Starting deletion of group ${groupId}`);
+    
     try {
-        const groupId = req.params.id;
-        console.log(`[DELETE] Deleting group ${groupId}`);
-        
         // מחק גרסאות
-        await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
+        const v = await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
+        console.log(`[DELETE GROUP] Deleted ${v.rowCount} versions`);
         
         // מחק אנשי קשר שנדחו (אם הטבלה קיימת)
         try {
-            await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
-        } catch (e) { /* טבלה לא קיימת - התעלם */ }
+            const r = await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
+            console.log(`[DELETE GROUP] Deleted ${r.rowCount} rejected contacts`);
+        } catch (e) { 
+            console.log('[DELETE GROUP] rejected_contacts table not found, skipping');
+        }
         
         // מחק אנשי קשר
-        await pool.query('DELETE FROM contacts WHERE group_id = $1', [groupId]);
+        const c = await pool.query('DELETE FROM contacts WHERE group_id = $1', [groupId]);
+        console.log(`[DELETE GROUP] Deleted ${c.rowCount} contacts`);
         
         // מחק את הקבוצה עצמה
-        await pool.query('DELETE FROM contact_groups WHERE id = $1', [groupId]);
+        const g = await pool.query('DELETE FROM contact_groups WHERE id = $1', [groupId]);
+        console.log(`[DELETE GROUP] Deleted ${g.rowCount} groups`);
         
-        console.log(`[DELETE] Group ${groupId} deleted successfully`);
+        console.log(`[DELETE GROUP] Group ${groupId} deleted successfully`);
         res.json({ success: true });
     } catch (err) {
-        console.error('[DELETE] Error:', err);
+        console.error('[DELETE GROUP] Error:', err.message);
+        console.error('[DELETE GROUP] Full error:', err);
         res.status(500).json({ error: err.message });
     }
 });
