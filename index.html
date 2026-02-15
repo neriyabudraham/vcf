@@ -74,6 +74,7 @@
                 <button onclick="showView('dashboard')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="dashboard">דשבורד</button>
                 <button onclick="showView('groups')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="groups">רשימות</button>
                 <button onclick="showView('files')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="files">קבצים</button>
+                <button onclick="showView('settings')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="settings">⚙️ הגדרות</button>
                 <button onclick="document.getElementById('fileInput').click()" class="btn-primary px-6 py-2.5 rounded-xl font-bold shadow-lg">
                     <span class="flex items-center gap-2">📁 העלאת קבצים</span>
                 </button>
@@ -265,6 +266,62 @@
             </div>
         </section>
 
+        <!-- Settings View -->
+        <section id="settings-view" class="hidden fade-in">
+            <div class="glass-card rounded-3xl p-8 mb-8">
+                <h2 class="text-2xl font-black text-slate-800 mb-6">⚙️ הגדרות מערכת</h2>
+                
+                <!-- כללי בחירת שמות -->
+                <div class="mb-8">
+                    <h3 class="text-xl font-bold text-slate-700 mb-4">🎯 כללי בחירת שמות אוטומטית</h3>
+                    <p class="text-slate-500 mb-4">הגדר כיצד המערכת תבחר אוטומטית את השם הטוב ביותר כשיש כפילויות</p>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="nameRulesForm">
+                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                            <input type="checkbox" id="rule-preferLonger" checked class="w-5 h-5 accent-indigo-600">
+                            <span>העדף שם ארוך יותר</span>
+                        </label>
+                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                            <input type="checkbox" id="rule-preferHebrew" checked class="w-5 h-5 accent-indigo-600">
+                            <span>העדף עברית</span>
+                        </label>
+                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                            <input type="checkbox" id="rule-avoidSpecialChars" checked class="w-5 h-5 accent-indigo-600">
+                            <span>הימנע מסימנים מיוחדים</span>
+                        </label>
+                        <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                            <input type="checkbox" id="rule-preferNoNumbers" checked class="w-5 h-5 accent-indigo-600">
+                            <span>העדף שמות בלי מספרים</span>
+                        </label>
+                        <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                            <span>אורך מקסימלי:</span>
+                            <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
+                        </div>
+                    </div>
+                    
+                    <button onclick="saveNameRules()" class="btn-primary px-6 py-3 rounded-xl font-bold mt-4">שמור כללים</button>
+                </div>
+                
+                <!-- שמות לא תקינים -->
+                <div>
+                    <h3 class="text-xl font-bold text-slate-700 mb-4">🚫 שמות לא תקינים (Blacklist)</h3>
+                    <p class="text-slate-500 mb-4">שמות אלו יוחלפו אוטומטית בשם ברירת מחדל</p>
+                    
+                    <div class="flex gap-3 mb-4">
+                        <input type="text" id="newInvalidName" placeholder="הזן שם לא תקין..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200">
+                        <select id="newInvalidPattern" class="px-4 py-3 rounded-xl border border-slate-200">
+                            <option value="exact">התאמה מדויקת</option>
+                            <option value="contains">מכיל</option>
+                            <option value="regex">ביטוי רגולרי</option>
+                        </select>
+                        <button onclick="addInvalidName()" class="btn-primary px-6 py-3 rounded-xl font-bold">➕ הוסף</button>
+                    </div>
+                    
+                    <div id="invalidNamesList" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+                </div>
+            </div>
+        </section>
+
     </main>
 
     <!-- Mapping Modal -->
@@ -292,7 +349,9 @@
             fileSamples: {},
             currentGroupId: null,
             analysisData: null,
-            currentPage: 1
+            currentPage: 1,
+            analysisPage: 1,
+            rejectedPage: 1
         };
         
         const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
@@ -317,6 +376,7 @@
             if (view === 'dashboard') loadDashboard();
             else if (view === 'groups') loadGroups();
             else if (view === 'files') loadFiles();
+            else if (view === 'settings') loadSettings();
         }
 
         // ==================== DASHBOARD ====================
@@ -825,8 +885,19 @@
             document.getElementById('conflictsCount').textContent = data.conflicts?.length || 0;
             document.getElementById('duplicatesCount').textContent = data.autoResolved?.length || 0;
             
+            state.analysisPage = 1;
             showAnalysisTab('accepted');
             showView('analysis');
+        }
+
+        function analysisPageChange(page) {
+            state.analysisPage = page;
+            showAnalysisTab('accepted');
+        }
+
+        function rejectedPageChange(page) {
+            state.rejectedPage = page;
+            showAnalysisTab('rejected');
         }
 
         function showAnalysisTab(tab) {
@@ -840,28 +911,49 @@
             const data = state.analysisData;
             
             if (tab === 'accepted') {
+                const page = state.analysisPage || 1;
+                const perPage = 500;
+                const start = (page - 1) * perPage;
+                const end = start + perPage;
+                const totalPages = Math.ceil((data.allData?.length || 0) / perPage);
+                
                 content.innerHTML = `
-                    <div class="overflow-x-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <p class="text-slate-600">מציג ${start + 1}-${Math.min(end, data.allData?.length || 0)} מתוך <strong>${(data.allData?.length || 0).toLocaleString()}</strong> אנשי קשר</p>
+                        <div class="flex gap-2">
+                            ${page > 1 ? `<button onclick="analysisPageChange(${page - 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">◀ הקודם</button>` : ''}
+                            <span class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-bold">עמוד ${page} / ${totalPages}</span>
+                            ${page < totalPages ? `<button onclick="analysisPageChange(${page + 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">הבא ▶</button>` : ''}
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
                         <table class="w-full">
-                            <thead class="bg-slate-50"><tr>
+                            <thead class="bg-slate-50 sticky top-0"><tr>
+                                <th class="px-4 py-3 text-right font-semibold">#</th>
                                 <th class="px-4 py-3 text-right font-semibold">שם</th>
                                 <th class="px-4 py-3 text-right font-semibold">טלפון</th>
                                 <th class="px-4 py-3 text-right font-semibold">מקור</th>
                             </tr></thead>
-                            <tbody>${(data.allData || []).slice(0, 100).map(c => `
+                            <tbody>${(data.allData || []).slice(start, end).map((c, i) => `
                                 <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-2 text-slate-400">${start + i + 1}</td>
                                     <td class="px-4 py-2">${c.name}</td>
                                     <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
                                     <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
                                 </tr>
                             `).join('')}</tbody>
                         </table>
-                        ${data.allData?.length > 100 ? `<p class="text-center text-slate-400 mt-4">מציג 100 מתוך ${data.allData.length}</p>` : ''}
                     </div>
                 `;
             } else if (tab === 'rejected') {
                 const reasons = {};
                 (data.rejectedContacts || []).forEach(c => { reasons[c.reason] = (reasons[c.reason] || 0) + 1; });
+                
+                const page = state.rejectedPage || 1;
+                const perPage = 500;
+                const start = (page - 1) * perPage;
+                const end = start + perPage;
+                const totalPages = Math.ceil((data.rejectedContacts?.length || 0) / perPage);
                 
                 content.innerHTML = `
                     <div class="grid grid-cols-4 gap-3 mb-6">
@@ -872,15 +964,23 @@
                             </div>
                         `).join('')}
                     </div>
-                    <div class="overflow-x-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <p class="text-slate-600">מציג ${start + 1}-${Math.min(end, data.rejectedContacts?.length || 0)} מתוך <strong>${(data.rejectedContacts?.length || 0).toLocaleString()}</strong></p>
+                        <div class="flex gap-2">
+                            ${page > 1 ? `<button onclick="rejectedPageChange(${page - 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">◀ הקודם</button>` : ''}
+                            <span class="px-4 py-2 bg-red-100 text-red-700 rounded-lg font-bold">עמוד ${page} / ${totalPages || 1}</span>
+                            ${page < totalPages ? `<button onclick="rejectedPageChange(${page + 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">הבא ▶</button>` : ''}
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
                         <table class="w-full">
-                            <thead class="bg-slate-50"><tr>
+                            <thead class="bg-slate-50 sticky top-0"><tr>
                                 <th class="px-4 py-3 text-right font-semibold">שם</th>
                                 <th class="px-4 py-3 text-right font-semibold">טלפון מקורי</th>
                                 <th class="px-4 py-3 text-right font-semibold">סיבת דחייה</th>
                                 <th class="px-4 py-3 text-right font-semibold">מקור</th>
                             </tr></thead>
-                            <tbody>${(data.rejectedContacts || []).slice(0, 100).map(c => `
+                            <tbody>${(data.rejectedContacts || []).slice(start, end).map(c => `
                                 <tr class="border-b border-slate-100">
                                     <td class="px-4 py-2">${c.name}</td>
                                     <td class="px-4 py-2 font-mono text-slate-600">${c.phone || '(ריק)'}</td>
@@ -889,22 +989,36 @@
                                 </tr>
                             `).join('')}</tbody>
                         </table>
-                        ${data.rejectedContacts?.length > 100 ? `<p class="text-center text-slate-400 mt-4">מציג 100 מתוך ${data.rejectedContacts.length}</p>` : ''}
                     </div>
                 `;
             } else if (tab === 'conflicts') {
                 content.innerHTML = (data.conflicts || []).length ? `
+                    <div class="bg-green-50 rounded-xl p-4 mb-4 flex items-center gap-3">
+                        <span class="text-2xl">✨</span>
+                        <div>
+                            <p class="font-bold text-green-700">בחירה אוטומטית פעילה</p>
+                            <p class="text-sm text-green-600">המערכת בחרה את השם הטוב ביותר לפי הכללים שהגדרת. תוכל לשנות את הבחירה ידנית.</p>
+                        </div>
+                    </div>
                     <div class="space-y-4">
                         ${(data.conflicts || []).map((c, i) => `
                             <div class="bg-amber-50 rounded-xl p-4">
-                                <p class="font-mono text-lg font-bold text-slate-700 mb-3">${c.phone}</p>
+                                <div class="flex justify-between items-center mb-3">
+                                    <p class="font-mono text-lg font-bold text-slate-700">${c.phone}</p>
+                                    <span class="text-sm text-amber-600">${c.names.length} שמות שונים</span>
+                                </div>
                                 <div class="flex flex-wrap gap-2">
-                                    ${c.names.map(name => `
+                                    ${c.names.map((name, idx) => {
+                                        const isSelected = c.autoSelected === name;
+                                        const score = c.scores ? c.scores[idx] : 0;
+                                        return `
                                         <button onclick="resolveConflict('${c.phone}', '${name.replace(/'/g, "\\'")}', this)" 
-                                                class="px-4 py-2 bg-white rounded-lg border-2 border-slate-200 font-medium hover:border-indigo-500 hover:bg-indigo-50 transition-all">
+                                                class="px-4 py-2 bg-white rounded-lg border-2 ${isSelected ? 'border-green-500 bg-green-50 ring-2 ring-green-200' : 'border-slate-200'} font-medium hover:border-indigo-500 hover:bg-indigo-50 transition-all relative">
                                             ${name}
+                                            ${isSelected ? '<span class="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full">✓ נבחר</span>' : ''}
+                                            ${score ? '<span class="block text-xs text-slate-400 mt-1">ניקוד: ' + score + '</span>' : ''}
                                         </button>
-                                    `).join('')}
+                                    `}).join('')}
                                 </div>
                             </div>
                         `).join('')}
@@ -996,6 +1110,73 @@
         async function addFilesToGroup() {
             // TODO: implement add files to existing group
             Toast.fire({ icon: 'info', title: 'פיצ\'ר בפיתוח' });
+        }
+
+        // ==================== SETTINGS ====================
+        async function loadSettings() {
+            try {
+                // טען כללי שמות
+                const rules = await api('/api/settings/name-rules');
+                document.getElementById('rule-preferLonger').checked = rules.preferLonger !== false;
+                document.getElementById('rule-preferHebrew').checked = rules.preferHebrew !== false;
+                document.getElementById('rule-avoidSpecialChars').checked = rules.avoidSpecialChars !== false;
+                document.getElementById('rule-preferNoNumbers').checked = rules.preferNoNumbers !== false;
+                document.getElementById('rule-maxLength').value = rules.maxLength || 20;
+                
+                // טען שמות לא תקינים
+                const invalidNames = await api('/api/invalid-names');
+                document.getElementById('invalidNamesList').innerHTML = invalidNames.map(n => `
+                    <div class="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
+                        <span class="font-medium text-red-700">${n.name}</span>
+                        <span class="text-xs text-red-400 mx-2">(${n.pattern_type})</span>
+                        <button onclick="deleteInvalidName(${n.id})" class="text-red-400 hover:text-red-600">✕</button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Settings error:', err);
+            }
+        }
+
+        async function saveNameRules() {
+            const rules = {
+                preferLonger: document.getElementById('rule-preferLonger').checked,
+                preferHebrew: document.getElementById('rule-preferHebrew').checked,
+                avoidSpecialChars: document.getElementById('rule-avoidSpecialChars').checked,
+                preferNoNumbers: document.getElementById('rule-preferNoNumbers').checked,
+                maxLength: parseInt(document.getElementById('rule-maxLength').value) || 20,
+                allowedChars: ["'", '"', "-", " "]
+            };
+            
+            await api('/api/settings/name-rules', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(rules)
+            });
+            
+            Toast.fire({ icon: 'success', title: 'הכללים נשמרו' });
+        }
+
+        async function addInvalidName() {
+            const name = document.getElementById('newInvalidName').value.trim();
+            const patternType = document.getElementById('newInvalidPattern').value;
+            
+            if (!name) return Toast.fire({ icon: 'error', title: 'הזן שם' });
+            
+            await api('/api/invalid-names', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, patternType })
+            });
+            
+            document.getElementById('newInvalidName').value = '';
+            Toast.fire({ icon: 'success', title: 'השם נוסף לרשימה השחורה' });
+            loadSettings();
+        }
+
+        async function deleteInvalidName(id) {
+            await api(`/api/invalid-names/${id}`, { method: 'DELETE' });
+            Toast.fire({ icon: 'success', title: 'השם הוסר' });
+            loadSettings();
         }
 
         // ==================== INIT ====================

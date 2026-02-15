@@ -89,6 +89,44 @@ CREATE TABLE IF NOT EXISTS tags (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- טבלת שמות לא תקינים (blacklist)
+CREATE TABLE IF NOT EXISTS invalid_names (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(500) NOT NULL,
+    pattern_type VARCHAR(50) DEFAULT 'exact', -- exact, contains, regex
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(name, pattern_type)
+);
+
+-- טבלת הגדרות מערכת
+CREATE TABLE IF NOT EXISTS system_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- הגדרות ברירת מחדל לכללי בחירת שמות
+INSERT INTO system_settings (key, value) VALUES 
+('name_rules', '{
+    "preferLonger": true,
+    "maxLength": 20,
+    "preferHebrew": true,
+    "avoidSpecialChars": true,
+    "allowedChars": ["''", "\"", "-", " "],
+    "preferNoNumbers": true
+}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
+-- שמות לא תקינים ברירת מחדל
+INSERT INTO invalid_names (name, pattern_type) VALUES 
+('.', 'exact'),
+('..', 'exact'),
+('Unknown', 'exact'),
+('No Name', 'exact'),
+('ללא שם', 'exact'),
+('אין שם', 'exact')
+ON CONFLICT DO NOTHING;
+
 -- אינדקסים לביצועים
 CREATE INDEX IF NOT EXISTS idx_contacts_group ON contacts(group_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_normalized);

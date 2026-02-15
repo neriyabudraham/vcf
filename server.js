@@ -54,17 +54,141 @@ const normalizePhone = (p) => {
 
 const getBaseName = (name) => {
     if (!name) return '';
-    return name.toString().replace(/\s?[\(\-]?\d+[\)]?$/g, '').trim();
+    return name.toString().replace(/\s?\(\d+\)$/g, '').trim();
 };
 
 const cleanName = (name) => {
     if (!name) return '';
     let n = name.toString().trim();
-    n = n.replace(/\s?[\(\-]\d+[\)]?$/g, ''); 
+    n = n.replace(/\s?\(\d+\)$/g, ''); 
     if (/^[\.\-\_\*\s\d]+$/.test(n)) return ''; 
     n = n.replace(/[^א-תa-zA-Z0-9\s\'\"\-\(\)\.]/g, ' ');
     return n.replace(/\s\s+/g, ' ').trim();
 };
+
+// בדיקה אם שם ברשימת השמות הלא תקינים
+let invalidNamesCache = null;
+async function loadInvalidNames() {
+    try {
+        const res = await pool.query('SELECT name, pattern_type FROM invalid_names');
+        invalidNamesCache = res.rows;
+    } catch (e) {
+        invalidNamesCache = [];
+    }
+    return invalidNamesCache;
+}
+
+async function isInvalidName(name) {
+    if (!name || name.trim() === '') return true;
+    if (!invalidNamesCache) await loadInvalidNames();
+    const normalized = name.trim().toLowerCase();
+    for (const rule of invalidNamesCache) {
+        if (rule.pattern_type === 'exact' && rule.name.toLowerCase() === normalized) return true;
+        if (rule.pattern_type === 'contains' && normalized.includes(rule.name.toLowerCase())) return true;
+        if (rule.pattern_type === 'regex') {
+            try { if (new RegExp(rule.name, 'i').test(name)) return true; } catch(e) {}
+        }
+    }
+    return false;
+}
+
+// טעינת כללי בחירת שמות
+let nameRulesCache = null;
+async function loadNameRules() {
+    try {
+        const res = await pool.query("SELECT value FROM system_settings WHERE key = 'name_rules'");
+        nameRulesCache = res.rows[0]?.value || {};
+    } catch (e) {
+        nameRulesCache = { preferLonger: true, maxLength: 20, preferHebrew: true, avoidSpecialChars: true };
+    }
+    return nameRulesCache;
+}
+
+// חישוב ציון לשם (ככל שגבוה יותר - השם טוב יותר)
+async function scoreName(name) {
+    if (!name || name.trim() === '') return -1000;
+    if (await isInvalidName(name)) return -1000;
+    
+    const rules = nameRulesCache || await loadNameRules();
+    let score = 0;
+    const n = name.trim();
+    
+    // אורך - עדיפות לארוך יותר אבל לא יותר מדי
+    if (rules.preferLonger) {
+        if (n.length <= (rules.maxLength || 20)) {
+            score += n.length * 2;
+        } else {
+            score -= (n.length - rules.maxLength) * 3; // קנס על שם ארוך מדי
+        }
+    }
+    
+    // עדיפות לעברית
+    if (rules.preferHebrew) {
+        const hebrewChars = (n.match(/[א-ת]/g) || []).length;
+        const totalChars = n.replace(/\s/g, '').length;
+        if (hebrewChars > 0) {
+            score += 30 + (hebrewChars / totalChars) * 20;
+        }
+    }
+    
+    // הימנעות מסימנים מיוחדים
+    if (rules.avoidSpecialChars) {
+        const allowed = rules.allowedChars || ["'", '"', "-", " "];
+        const specialPattern = new RegExp(`[^א-תa-zA-Z0-9${allowed.map(c => '\\' + c).join('')}]`, 'g');
+        const badChars = (n.match(specialPattern) || []).length;
+        score -= badChars * 10;
+    }
+    
+    // הימנעות ממספרים
+    if (rules.preferNoNumbers) {
+        const numbers = (n.match(/\d/g) || []).length;
+        score -= numbers * 5;
+    }
+    
+    // בונוס לשם עם רווח (שם + משפחה)
+    if (n.includes(' ') && n.split(' ').length >= 2) {
+        score += 15;
+    }
+    
+    return score;
+}
+
+// בחירת השם הטוב ביותר מרשימה
+async function chooseBestName(names) {
+    if (!names || names.length === 0) return '';
+    if (names.length === 1) return names[0];
+    
+    let bestName = names[0];
+    let bestScore = await scoreName(names[0]);
+    
+    for (let i = 1; i < names.length; i++) {
+        const s = await scoreName(names[i]);
+        if (s > bestScore) {
+            bestScore = s;
+            bestName = names[i];
+        }
+    }
+    
+    return bestName;
+}
+
+// יצירת שם ייחודי עם (X) אם צריך
+function makeUniqueName(name, existingNames) {
+    if (!name) return name;
+    const baseName = getBaseName(name);
+    if (!existingNames.has(baseName.toLowerCase())) {
+        existingNames.add(baseName.toLowerCase());
+        return baseName;
+    }
+    
+    let counter = 2;
+    while (existingNames.has(`${baseName} (${counter})`.toLowerCase())) {
+        counter++;
+    }
+    const uniqueName = `${baseName} (${counter})`;
+    existingNames.add(uniqueName.toLowerCase());
+    return uniqueName;
+}
 
 function parseVcf(content) {
     const contacts = [];
@@ -338,21 +462,45 @@ app.post('/api/analyze', auth, async (req, res) => {
                         fileStats.duplicates++;
                         
                         if (getBaseName(existing.name) === getBaseName(name)) {
-                            const bestName = existing.name.length >= name.length ? existing.name : name;
+                            // שמות דומים - בחר את הטוב יותר לפי כללי הניקוד
+                            const existingScore = await scoreName(existing.name);
+                            const newScore = await scoreName(name);
+                            const bestName = newScore > existingScore ? name : existing.name;
                             existing.name = bestName;
                             if (!autoResolved.find(a => a.phone === phone)) {
-                                autoResolved.push({ phone, name: bestName, count: 2 });
+                                autoResolved.push({ phone, name: bestName, allNames: [existing.name, name], count: 2 });
                             } else {
                                 const ar = autoResolved.find(a => a.phone === phone);
                                 ar.count++;
+                                if (!ar.allNames.includes(name)) ar.allNames.push(name);
                             }
                         } else if (existing.name !== name) {
+                            // שמות שונים - קונפליקט (אלא אם נבחר אוטומטית)
+                            const existingScore = await scoreName(existing.name);
+                            const newScore = await scoreName(name);
+                            
                             let conf = conflicts.find(c => c.phone === phone);
                             if (!conf) {
-                                conflicts.push({ phone, names: [existing.name, name], sources: [existing.sourceFile, contactData.sourceFile] });
+                                conf = { 
+                                    phone, 
+                                    names: [existing.name, name], 
+                                    scores: [existingScore, newScore],
+                                    sources: [existing.sourceFile, contactData.sourceFile],
+                                    autoSelected: existingScore >= newScore ? existing.name : name
+                                };
+                                conflicts.push(conf);
+                                // עדכן את השם שנבחר אוטומטית
+                                if (newScore > existingScore) {
+                                    existing.name = name;
+                                }
                             } else if (!conf.names.includes(name)) {
                                 conf.names.push(name);
+                                conf.scores.push(newScore);
                                 conf.sources.push(contactData.sourceFile);
+                                // עדכן את הבחירה האוטומטית אם צריך
+                                const maxScoreIdx = conf.scores.indexOf(Math.max(...conf.scores));
+                                conf.autoSelected = conf.names[maxScoreIdx];
+                                existing.name = conf.autoSelected;
                             }
                         }
                     } else {
@@ -423,17 +571,20 @@ app.post('/api/finalize', auth, async (req, res) => {
         const resMap = new Map(resolutions.rows.map(r => [r.phone, r.resolved_name]));
 
         const finalContacts = [];
-        const nameUsedRegistry = new Map();
+        const usedNames = new Set();
 
-        contacts.forEach(c => {
+        for (const c of contacts) {
             let name = resMap.get(c.phone) || c.name;
-            if (nameUsedRegistry.has(name)) {
-                let count = nameUsedRegistry.get(name) + 1;
-                nameUsedRegistry.set(name, count);
-                name = `${name} (${count})`;
-            } else { 
-                nameUsedRegistry.set(name, 1); 
+            
+            // בדיקה אם השם לא תקין - החלף בשם ברירת מחדל
+            if (await isInvalidName(name)) {
+                const baseName = getBaseName(name);
+                name = baseName && !await isInvalidName(baseName) ? baseName : `איש קשר ${c.phone.slice(-4)}`;
             }
+            
+            // וודא שם ייחודי עם (X) אם צריך
+            name = makeUniqueName(name, usedNames);
+            
             finalContacts.push({ 
                 phone: c.phone, 
                 name, 
@@ -442,7 +593,7 @@ app.post('/api/finalize', auth, async (req, res) => {
                 sourceFileId: c.sourceFileId || null,
                 originalData: c.originalData || {}
             });
-        });
+        }
 
         // עדכון הקבוצה
         await pool.query(
@@ -796,6 +947,66 @@ app.get('/api/dashboard-stats', auth, async (req, res) => {
             contacts: contacts.rows[0],
             files: files.rows[0]
         });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== SETTINGS & INVALID NAMES ====================
+
+// רשימת שמות לא תקינים
+app.get('/api/invalid-names', auth, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT * FROM invalid_names ORDER BY name');
+        res.json(r.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/invalid-names', auth, async (req, res) => {
+    try {
+        const { name, patternType = 'exact' } = req.body;
+        await pool.query(
+            'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [name, patternType]
+        );
+        invalidNamesCache = null; // אפס את הקאש
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/invalid-names/:id', auth, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM invalid_names WHERE id = $1', [req.params.id]);
+        invalidNamesCache = null;
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// כללי בחירת שמות
+app.get('/api/settings/name-rules', auth, async (req, res) => {
+    try {
+        const r = await pool.query("SELECT value FROM system_settings WHERE key = 'name_rules'");
+        res.json(r.rows[0]?.value || {});
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/settings/name-rules', auth, async (req, res) => {
+    try {
+        await pool.query(
+            `INSERT INTO system_settings (key, value, updated_at) VALUES ('name_rules', $1, CURRENT_TIMESTAMP)
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = CURRENT_TIMESTAMP`,
+            [JSON.stringify(req.body)]
+        );
+        nameRulesCache = null; // אפס קאש
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
