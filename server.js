@@ -1168,33 +1168,37 @@ app.delete('/api/groups/:id', auth, async (req, res) => {
     const groupId = req.params.id;
     console.log(`[DELETE GROUP] Starting deletion of group ${groupId}`);
     
+    // שלח תשובה מיד - המחיקה תמשיך ברקע
+    res.json({ success: true, message: 'Deletion started' });
+    
     try {
         // מחק גרסאות
-        const v = await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
-        console.log(`[DELETE GROUP] Deleted ${v.rowCount} versions`);
+        await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
+        console.log(`[DELETE GROUP] Deleted versions`);
         
-        // מחק אנשי קשר שנדחו (אם הטבלה קיימת)
+        // מחק אנשי קשר שנדחו
         try {
-            const r = await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
-            console.log(`[DELETE GROUP] Deleted ${r.rowCount} rejected contacts`);
-        } catch (e) { 
-            console.log('[DELETE GROUP] rejected_contacts table not found, skipping');
-        }
+            await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
+        } catch (e) { }
         
-        // מחק אנשי קשר
-        const c = await pool.query('DELETE FROM contacts WHERE group_id = $1', [groupId]);
-        console.log(`[DELETE GROUP] Deleted ${c.rowCount} contacts`);
+        // מחק אנשי קשר בחלקים של 5000
+        let deleted = 0;
+        while (true) {
+            const result = await pool.query(
+                'DELETE FROM contacts WHERE id IN (SELECT id FROM contacts WHERE group_id = $1 LIMIT 5000)', 
+                [groupId]
+            );
+            deleted += result.rowCount;
+            console.log(`[DELETE GROUP] Deleted ${deleted} contacts so far...`);
+            if (result.rowCount < 5000) break;
+        }
+        console.log(`[DELETE GROUP] Total deleted ${deleted} contacts`);
         
         // מחק את הקבוצה עצמה
-        const g = await pool.query('DELETE FROM contact_groups WHERE id = $1', [groupId]);
-        console.log(`[DELETE GROUP] Deleted ${g.rowCount} groups`);
-        
+        await pool.query('DELETE FROM contact_groups WHERE id = $1', [groupId]);
         console.log(`[DELETE GROUP] Group ${groupId} deleted successfully`);
-        res.json({ success: true });
     } catch (err) {
         console.error('[DELETE GROUP] Error:', err.message);
-        console.error('[DELETE GROUP] Full error:', err);
-        res.status(500).json({ error: err.message });
     }
 });
 
