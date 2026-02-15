@@ -243,8 +243,8 @@ async function cleanName(name) {
     if (/^\s*\(\d+\)\s*$/.test(result)) return '';
     
     // אם השם קצר מדי - החזר ריק
-    const rules = nameRulesCache || await loadNameRules();
-    const minLength = rules.minLength || 0;
+    const nameRules = nameRulesCache || await loadNameRules();
+    const minLength = nameRules.minLength || 0;
     if (minLength > 0 && countRealChars(result) < minLength) return '';
     
     return result;
