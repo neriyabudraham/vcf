@@ -154,6 +154,82 @@ async function scoreName(name) {
     return score;
 }
 
+// כללי ניקוי שמות
+let cleaningRulesCache = null;
+
+async function loadCleaningRules() {
+    try {
+        const res = await pool.query("SELECT value FROM system_settings WHERE key = 'cleaning_rules'");
+        cleaningRulesCache = res.rows[0]?.value || getDefaultCleaningRules();
+    } catch (e) {
+        cleaningRulesCache = getDefaultCleaningRules();
+    }
+    return cleaningRulesCache;
+}
+
+function getDefaultCleaningRules() {
+    return [
+        { id: 1, type: 'trim_start', pattern: '.', description: 'הסר נקודה מתחילת השם', enabled: true },
+        { id: 2, type: 'trim_start', pattern: ' ', description: 'הסר רווח מתחילת השם', enabled: true },
+        { id: 3, type: 'trim_end', pattern: '.', description: 'הסר נקודה מסוף השם', enabled: true },
+        { id: 4, type: 'trim_end', pattern: ' ', description: 'הסר רווח מסוף השם', enabled: true },
+        { id: 5, type: 'replace', pattern: '  ', replacement: ' ', description: 'הסר רווחים כפולים', enabled: true },
+        { id: 6, type: 'trim_start', pattern: '-', description: 'הסר מקף מתחילת השם', enabled: true },
+        { id: 7, type: 'trim_start', pattern: '_', description: 'הסר קו תחתון מתחילת השם', enabled: true },
+    ];
+}
+
+// ניקוי שם לפי הכללים
+async function cleanName(name) {
+    if (!name) return name;
+    
+    const rules = cleaningRulesCache || await loadCleaningRules();
+    let cleaned = name;
+    
+    // עבור על כל כלל עד שאין שינוי
+    let changed = true;
+    let iterations = 0;
+    while (changed && iterations < 10) {
+        changed = false;
+        iterations++;
+        
+        for (const rule of rules) {
+            if (!rule.enabled) continue;
+            
+            const before = cleaned;
+            
+            switch (rule.type) {
+                case 'trim_start':
+                    while (cleaned.startsWith(rule.pattern)) {
+                        cleaned = cleaned.slice(rule.pattern.length);
+                    }
+                    break;
+                    
+                case 'trim_end':
+                    while (cleaned.endsWith(rule.pattern)) {
+                        cleaned = cleaned.slice(0, -rule.pattern.length);
+                    }
+                    break;
+                    
+                case 'replace':
+                    cleaned = cleaned.split(rule.pattern).join(rule.replacement || '');
+                    break;
+                    
+                case 'regex':
+                    try {
+                        const regex = new RegExp(rule.pattern, 'g');
+                        cleaned = cleaned.replace(regex, rule.replacement || '');
+                    } catch (e) {}
+                    break;
+            }
+            
+            if (before !== cleaned) changed = true;
+        }
+    }
+    
+    return cleaned.trim();
+}
+
 // בחירת השם הטוב ביותר מרשימה
 async function chooseBestName(names) {
     if (!names || names.length === 0) return '';
@@ -445,7 +521,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                     }
                     
                     const phone = phoneResult.normalized;
-                    let name = cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
+                    let name = await cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
                     if (!name) name = `${defaultName || 'איש קשר'} ${serial++}`;
                     
                     const contactData = {
@@ -1322,6 +1398,30 @@ app.put('/api/settings/name-rules', auth, async (req, res) => {
             [JSON.stringify(req.body)]
         );
         nameRulesCache = null; // אפס קאש
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// כללי ניקוי שמות
+app.get('/api/settings/cleaning-rules', auth, async (req, res) => {
+    try {
+        const r = await pool.query("SELECT value FROM system_settings WHERE key = 'cleaning_rules'");
+        res.json(r.rows[0]?.value || getDefaultCleaningRules());
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/settings/cleaning-rules', auth, async (req, res) => {
+    try {
+        await pool.query(
+            `INSERT INTO system_settings (key, value, updated_at) VALUES ('cleaning_rules', $1, CURRENT_TIMESTAMP)
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = CURRENT_TIMESTAMP`,
+            [JSON.stringify(req.body)]
+        );
+        cleaningRulesCache = null;
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -306,7 +306,7 @@
                 </div>
                 
                 <!-- שמות לא תקינים -->
-                <div>
+                <div class="mb-8">
                     <h3 class="text-xl font-bold text-slate-700 mb-4">🚫 שמות לא תקינים (Blacklist)</h3>
                     <p class="text-slate-500 mb-4">שמות אלו יוחלפו אוטומטית בשם ברירת מחדל</p>
                     
@@ -321,6 +321,30 @@
                     </div>
                     
                     <div id="invalidNamesList" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+                </div>
+                
+                <!-- כללי ניקוי שמות -->
+                <div>
+                    <h3 class="text-xl font-bold text-slate-700 mb-4">🧹 כללי ניקוי שמות</h3>
+                    <p class="text-slate-500 mb-4">כללים אוטומטיים לניקוי וסידור שמות בעת הייבוא</p>
+                    
+                    <div id="cleaningRulesList" class="space-y-2 mb-4"></div>
+                    
+                    <div class="border-t border-slate-200 pt-4 mt-4">
+                        <h4 class="font-semibold text-slate-600 mb-3">➕ הוסף כלל חדש</h4>
+                        <div class="flex flex-wrap gap-3">
+                            <select id="newRuleType" class="px-4 py-3 rounded-xl border border-slate-200" onchange="updateRuleInputs()">
+                                <option value="trim_start">הסר מתחילת השם</option>
+                                <option value="trim_end">הסר מסוף השם</option>
+                                <option value="replace">החלף טקסט</option>
+                                <option value="regex">ביטוי רגולרי</option>
+                            </select>
+                            <input type="text" id="newRulePattern" placeholder="תו/טקסט להסרה..." class="px-4 py-3 rounded-xl border border-slate-200 flex-1">
+                            <input type="text" id="newRuleReplacement" placeholder="להחליף ב..." class="px-4 py-3 rounded-xl border border-slate-200 hidden">
+                            <input type="text" id="newRuleDesc" placeholder="תיאור הכלל..." class="px-4 py-3 rounded-xl border border-slate-200 w-48">
+                            <button onclick="addCleaningRule()" class="btn-primary px-6 py-3 rounded-xl font-bold">➕ הוסף</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -1477,6 +1501,9 @@
                         <button onclick="deleteInvalidName(${n.id})" class="text-red-400 hover:text-red-600">✕</button>
                     </div>
                 `).join('');
+                
+                // טען כללי ניקוי
+                await loadCleaningRules();
             } catch (err) {
                 console.error('Settings error:', err);
             }
@@ -1522,6 +1549,98 @@
             await api(`/api/invalid-names/${id}`, { method: 'DELETE' });
             Toast.fire({ icon: 'success', title: 'השם הוסר' });
             loadSettings();
+        }
+
+        // ==================== CLEANING RULES ====================
+        let cleaningRules = [];
+
+        async function loadCleaningRules() {
+            cleaningRules = await api('/api/settings/cleaning-rules');
+            renderCleaningRules();
+        }
+
+        function renderCleaningRules() {
+            const ruleTypeLabels = {
+                'trim_start': 'הסר מתחילת השם',
+                'trim_end': 'הסר מסוף השם',
+                'replace': 'החלף',
+                'regex': 'ביטוי רגולרי'
+            };
+            
+            document.getElementById('cleaningRulesList').innerHTML = cleaningRules.map((rule, idx) => `
+                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl ${!rule.enabled ? 'opacity-50' : ''}">
+                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} 
+                           onchange="toggleCleaningRule(${idx})" 
+                           class="w-5 h-5 accent-indigo-600">
+                    <span class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded">${ruleTypeLabels[rule.type]}</span>
+                    <code class="text-sm bg-slate-200 px-2 py-1 rounded">"${rule.pattern}"</code>
+                    ${rule.type === 'replace' || rule.type === 'regex' ? `<span class="text-slate-400">→</span><code class="text-sm bg-green-100 px-2 py-1 rounded">"${rule.replacement || ''}"</code>` : ''}
+                    <span class="flex-1 text-slate-600 text-sm">${rule.description || ''}</span>
+                    <button onclick="deleteCleaningRule(${idx})" class="text-red-400 hover:text-red-600 text-lg">✕</button>
+                </div>
+            `).join('') || '<p class="text-slate-400 text-center py-4">אין כללי ניקוי מוגדרים</p>';
+        }
+
+        async function toggleCleaningRule(idx) {
+            cleaningRules[idx].enabled = !cleaningRules[idx].enabled;
+            await saveCleaningRules();
+        }
+
+        async function deleteCleaningRule(idx) {
+            cleaningRules.splice(idx, 1);
+            await saveCleaningRules();
+            Toast.fire({ icon: 'success', title: 'הכלל נמחק' });
+        }
+
+        async function addCleaningRule() {
+            const type = document.getElementById('newRuleType').value;
+            const pattern = document.getElementById('newRulePattern').value;
+            const replacement = document.getElementById('newRuleReplacement').value;
+            const description = document.getElementById('newRuleDesc').value;
+            
+            if (!pattern) return Toast.fire({ icon: 'error', title: 'הזן תו או טקסט' });
+            
+            const newRule = {
+                id: Date.now(),
+                type,
+                pattern,
+                replacement: (type === 'replace' || type === 'regex') ? replacement : undefined,
+                description,
+                enabled: true
+            };
+            
+            cleaningRules.push(newRule);
+            await saveCleaningRules();
+            
+            // נקה שדות
+            document.getElementById('newRulePattern').value = '';
+            document.getElementById('newRuleReplacement').value = '';
+            document.getElementById('newRuleDesc').value = '';
+            
+            Toast.fire({ icon: 'success', title: 'הכלל נוסף' });
+        }
+
+        async function saveCleaningRules() {
+            await api('/api/settings/cleaning-rules', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cleaningRules)
+            });
+            renderCleaningRules();
+        }
+
+        function updateRuleInputs() {
+            const type = document.getElementById('newRuleType').value;
+            const replacementInput = document.getElementById('newRuleReplacement');
+            const patternInput = document.getElementById('newRulePattern');
+            
+            if (type === 'replace' || type === 'regex') {
+                replacementInput.classList.remove('hidden');
+                patternInput.placeholder = type === 'regex' ? 'ביטוי רגולרי...' : 'טקסט למציאה...';
+            } else {
+                replacementInput.classList.add('hidden');
+                patternInput.placeholder = type === 'trim_start' ? 'תו להסרה מההתחלה...' : 'תו להסרה מהסוף...';
+            }
         }
 
         // ==================== INIT ====================
