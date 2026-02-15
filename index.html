@@ -426,7 +426,8 @@
                 
                 // Recent groups
                 document.getElementById('recentGroups').innerHTML = groups.slice(0, 5).map(g => `
-                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100" onclick="viewGroup(${g.id})">
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100" 
+                         onclick="${g.status === 'draft' ? `resumeDraft(${g.id})` : `viewGroup(${g.id})`}">
                         <div class="flex items-center gap-3">
                             <span class="text-2xl">${g.status === 'draft' ? '📝' : '📋'}</span>
                             <div>
