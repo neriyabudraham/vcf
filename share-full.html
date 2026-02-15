@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>עריכת רשימת אנשי קשר | VCF Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Heebo', sans-serif; }
+        body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); min-height: 100vh; }
+        .glass-card { background: rgba(255,255,255,0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
+        .btn-primary { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; }
+        .btn-success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+        .tab-active { border-color: #6366f1; color: #6366f1; background: #eef2ff; }
+    </style>
+</head>
+<body class="text-slate-800 p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="glass-card rounded-3xl p-6 mb-6">
+            <div class="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                    <h1 id="groupName" class="text-2xl md:text-3xl font-black text-slate-800">טוען...</h1>
+                    <p id="groupInfo" class="text-slate-500"></p>
+                </div>
+                <div class="flex gap-3 flex-wrap">
+                    <button onclick="showSettings()" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200">⚙️ הגדרות</button>
+                    <button onclick="finalizeGroup()" class="btn-success px-6 py-3 rounded-xl font-bold shadow-lg">✅ שמור וסיים</button>
+                    <button onclick="downloadVcf()" class="btn-primary px-6 py-3 rounded-xl font-bold shadow-lg">📥 הורד VCF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6" id="statsContainer"></div>
+
+        <!-- Tabs -->
+        <div class="glass-card rounded-2xl overflow-hidden">
+            <div class="flex border-b border-slate-200">
+                <button onclick="showTab('accepted')" class="tab-btn flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="accepted">
+                    ✅ אושרו (<span id="acceptedCount">0</span>)
+                </button>
+                <button onclick="showTab('rejected')" class="tab-btn flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="rejected">
+                    ❌ נדחו (<span id="rejectedCount">0</span>)
+                </button>
+                <button onclick="showTab('conflicts')" class="tab-btn flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="conflicts">
+                    ⚠️ קונפליקטים (<span id="conflictsCount">0</span>)
+                </button>
+                <button onclick="showTab('duplicates')" class="tab-btn flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="duplicates">
+                    🔄 כפילויות (<span id="duplicatesCount">0</span>)
+                </button>
+            </div>
+            
+            <div id="tabContent" class="p-6 max-h-[60vh] overflow-auto"></div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex justify-center items-center gap-4 mt-4" id="pagination"></div>
+
+        <!-- Footer -->
+        <div class="text-center mt-6 text-slate-400 text-sm">
+            Powered by VCF Manager Pro
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="glass-card rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">⚙️ הגדרות ניקוי שמות</h2>
+                <button onclick="closeSettings()" class="text-2xl text-slate-400 hover:text-slate-600">&times;</button>
+            </div>
+            
+            <!-- Name Rules -->
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-slate-700 mb-4">📏 כללי שמות</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-sm text-slate-500">אורך מינימלי (אותיות בלבד)</label>
+                        <input type="number" id="minLength" value="2" min="1" max="10" class="w-full px-4 py-2 rounded-xl border border-slate-200">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Cleaning Rules -->
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-slate-700 mb-4">🧹 כללי ניקוי</h3>
+                <div id="cleaningRulesList" class="space-y-2"></div>
+            </div>
+            
+            <!-- Blacklist -->
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-slate-700 mb-4">🚫 שמות אסורים</h3>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="newInvalidName" placeholder="הוסף שם לרשימה..." class="flex-1 px-4 py-2 rounded-xl border border-slate-200">
+                    <button onclick="addInvalidName()" class="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200">➕</button>
+                </div>
+                <div id="invalidNamesList" class="space-y-1 max-h-40 overflow-auto"></div>
+            </div>
+            
+            <div class="flex justify-end gap-3">
+                <button onclick="closeSettings()" class="px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-semibold">ביטול</button>
+                <button onclick="saveSettings()" class="px-6 py-2 bg-indigo-600 text-white rounded-xl font-semibold">💾 שמור והחל</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
+        
+        const token = window.location.pathname.split('/').pop();
+        let state = {
+            data: null,
+            currentTab: 'accepted',
+            page: 1,
+            perPage: 500,
+            settings: {
+                cleaningRules: [],
+                nameRules: {},
+                invalidNames: []
+            }
+        };
+        
+        // טעינת הנתונים
+        async function loadData() {
+            try {
+                Swal.fire({ title: 'טוען נתונים...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                
+                const res = await fetch(`/api/public/full-data/${token}`);
+                if (!res.ok) {
+                    Swal.close();
+                    document.body.innerHTML = '<div class="min-h-screen flex items-center justify-center text-2xl text-slate-500">הקישור לא נמצא או שאין הרשאה לתצוגה מלאה</div>';
+                    return;
+                }
+                
+                state.data = await res.json();
+                
+                // טען הגדרות
+                const settingsRes = await fetch(`/api/public/settings/${token}`);
+                if (settingsRes.ok) {
+                    state.settings = await settingsRes.json();
+                }
+                
+                Swal.close();
+                renderUI();
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
+        }
+        
+        function renderUI() {
+            document.getElementById('groupName').textContent = state.data.targetGroupName;
+            document.getElementById('groupInfo').textContent = `${state.data.allData?.length || 0} אנשי קשר`;
+            
+            // Stats
+            const conflictCount = state.data.conflicts?.length || 0;
+            const approvedCount = state.data.allData?.length || 0;
+            const approvedWithoutConflict = approvedCount - conflictCount;
+            
+            document.getElementById('statsContainer').innerHTML = `
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-slate-700">${(state.data.stats?.totalParsed || approvedCount).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">נקראו</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 text-center cursor-help" title="כל אנשי הקשר הייחודיים">
+                    <p class="text-2xl font-black text-green-600">${approvedCount.toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">סה"כ אנשי קשר</p>
+                    <p class="text-xs text-green-500 mt-1">${approvedWithoutConflict.toLocaleString()} ללא קונפליקט</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-red-600">${(state.data.rejectedContacts?.length || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">נדחו</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 text-center cursor-help" title="כלולים בסה&quot;כ">
+                    <p class="text-2xl font-black text-amber-600">${conflictCount.toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">קונפליקטים</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-blue-600">${(state.data.autoResolved?.length || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">כפילויות</p>
+                </div>
+            `;
+            
+            // Tab counts
+            document.getElementById('acceptedCount').textContent = (state.data.allData?.length || 0).toLocaleString();
+            document.getElementById('rejectedCount').textContent = (state.data.rejectedContacts?.length || 0).toLocaleString();
+            document.getElementById('conflictsCount').textContent = (state.data.conflicts?.length || 0).toLocaleString();
+            document.getElementById('duplicatesCount').textContent = (state.data.autoResolved?.length || 0).toLocaleString();
+            
+            showTab('accepted');
+        }
+        
+        function showTab(tab) {
+            state.currentTab = tab;
+            state.page = 1;
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('tab-active');
+                if (btn.dataset.tab === tab) btn.classList.add('tab-active');
+            });
+            
+            renderTabContent();
+        }
+        
+        function renderTabContent() {
+            const content = document.getElementById('tabContent');
+            const pagination = document.getElementById('pagination');
+            
+            if (state.currentTab === 'accepted') {
+                const items = state.data.allData || [];
+                const totalPages = Math.ceil(items.length / state.perPage);
+                const start = (state.page - 1) * state.perPage;
+                const pageItems = items.slice(start, start + state.perPage);
+                
+                content.innerHTML = `
+                    <p class="text-sm text-slate-500 mb-4">מציג ${start + 1}-${Math.min(start + state.perPage, items.length)} מתוך ${items.length.toLocaleString()} אנשי קשר</p>
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 text-right">#</th>
+                                <th class="px-4 py-2 text-right">שם</th>
+                                <th class="px-4 py-2 text-right">טלפון</th>
+                                <th class="px-4 py-2 text-right">מקור</th>
+                                <th class="px-4 py-2 w-12"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${pageItems.map((c, i) => `
+                                <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-1 text-slate-400">${start + i + 1}</td>
+                                    <td class="px-4 py-1">
+                                        <input type="text" value="${(c.name || '').replace(/"/g, '&quot;')}"
+                                               class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none font-medium bg-transparent"
+                                               onchange="updateName(${start + i}, this.value)">
+                                    </td>
+                                    <td class="px-4 py-1 text-slate-600">${c.phone}</td>
+                                    <td class="px-4 py-1 text-slate-400 text-xs truncate max-w-[150px]">${c.sourceFile || ''}</td>
+                                    <td class="px-4 py-1">
+                                        <button onclick="clearName(${start + i})" class="text-red-400 hover:text-red-600">🗑️</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                
+                pagination.innerHTML = totalPages > 1 ? `
+                    <button onclick="changePage(${state.page - 1})" ${state.page === 1 ? 'disabled' : ''} 
+                            class="px-4 py-2 bg-slate-100 rounded-lg disabled:opacity-50">◀ הקודם</button>
+                    <span>עמוד ${state.page} / ${totalPages}</span>
+                    <button onclick="changePage(${state.page + 1})" ${state.page === totalPages ? 'disabled' : ''} 
+                            class="px-4 py-2 bg-slate-100 rounded-lg disabled:opacity-50">הבא ▶</button>
+                ` : '';
+                
+            } else if (state.currentTab === 'rejected') {
+                const items = state.data.rejectedContacts || [];
+                content.innerHTML = `
+                    <p class="text-sm text-slate-500 mb-4">${items.length.toLocaleString()} אנשי קשר נדחו</p>
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 text-right">שם</th>
+                                <th class="px-4 py-2 text-right">טלפון</th>
+                                <th class="px-4 py-2 text-right">סיבה</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.slice(0, 100).map(c => `
+                                <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-2">${c.name || '(ללא שם)'}</td>
+                                    <td class="px-4 py-2 text-slate-600">${c.phone || ''}</td>
+                                    <td class="px-4 py-2 text-red-500 text-xs">${getReasonText(c.reason)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                pagination.innerHTML = '';
+                
+            } else if (state.currentTab === 'conflicts') {
+                const items = state.data.conflicts || [];
+                content.innerHTML = items.length ? `
+                    <p class="text-sm text-slate-500 mb-4">${items.length.toLocaleString()} קונפליקטים - בחר את השם הנכון</p>
+                    <div class="space-y-4">
+                        ${items.map((c, idx) => `
+                            <div class="bg-slate-50 rounded-xl p-4">
+                                <p class="text-xs text-slate-400 mb-2">📞 ${c.phone}</p>
+                                <div class="flex flex-wrap gap-2">
+                                    ${c.names.map((name, i) => `
+                                        <button onclick="resolveConflict('${c.phone}', '${name.replace(/'/g, "\\'")}')" 
+                                                class="px-4 py-2 rounded-lg font-medium transition ${c.autoSelected === name ? 'bg-indigo-600 text-white' : 'bg-white border hover:border-indigo-400'}">
+                                            ${name}
+                                            <span class="text-xs opacity-70">(${c.scores?.[i] || 0})</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p class="text-slate-400 text-center py-8">אין קונפליקטים</p>';
+                pagination.innerHTML = '';
+                
+            } else if (state.currentTab === 'duplicates') {
+                const items = state.data.autoResolved || [];
+                content.innerHTML = items.length ? `
+                    <p class="text-sm text-slate-500 mb-4">${items.length.toLocaleString()} מקרים של שם דומה - נבחר הטוב ביותר אוטומטית</p>
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 text-right">טלפון</th>
+                                <th class="px-4 py-2 text-right">שם שנבחר</th>
+                                <th class="px-4 py-2 text-right">כפילויות</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.slice(0, 200).map(c => `
+                                <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-2 text-slate-600">${c.phone}</td>
+                                    <td class="px-4 py-2 font-medium text-green-600">${c.name}</td>
+                                    <td class="px-4 py-2 text-slate-400">${c.count || 2}x</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : '<p class="text-slate-400 text-center py-8">אין כפילויות</p>';
+                pagination.innerHTML = '';
+            }
+        }
+        
+        function getReasonText(reason) {
+            const reasons = {
+                'empty_phone': 'טלפון ריק',
+                'too_short': 'טלפון קצר מדי',
+                'too_long': 'טלפון ארוך מדי'
+            };
+            return reasons[reason] || reason;
+        }
+        
+        function changePage(page) {
+            state.page = page;
+            renderTabContent();
+        }
+        
+        async function updateName(index, newName) {
+            if (!state.data?.allData?.[index]) return;
+            
+            const contact = state.data.allData[index];
+            const oldName = contact.name;
+            
+            if (!newName || !newName.trim()) {
+                // מחיקת שם
+                await clearName(index);
+                return;
+            }
+            
+            contact.name = newName.trim();
+            scheduleSave();
+            Toast.fire({ icon: 'success', title: 'השם עודכן' });
+        }
+        
+        async function clearName(index) {
+            if (!state.data?.allData?.[index]) return;
+            
+            const contact = state.data.allData[index];
+            const oldName = contact.name;
+            const baseName = oldName?.replace(/\s?\(\d+\)$/g, '').trim();
+            
+            // שם דיפולטיבי
+            contact.name = `איש קשר ${contact.phone.slice(-4)}`;
+            
+            // הוסף לרשימה שחורה
+            if (baseName && !baseName.startsWith('איש קשר')) {
+                await fetch(`/api/public/invalid-names/${token}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: baseName, patternType: 'exact' })
+                });
+                
+                // עדכן גם אחרים עם אותו שם
+                let count = 1;
+                state.data.allData.forEach((c, i) => {
+                    if (i !== index) {
+                        const cBase = c.name?.replace(/\s?\(\d+\)$/g, '').trim();
+                        if (cBase === baseName) {
+                            c.name = `איש קשר ${c.phone.slice(-4)}`;
+                            count++;
+                        }
+                    }
+                });
+                
+                Toast.fire({ icon: 'success', title: `עודכנו ${count} אנשי קשר, "${baseName}" נוסף לרשימה השחורה` });
+            }
+            
+            scheduleSave();
+            renderTabContent();
+        }
+        
+        async function resolveConflict(phone, name) {
+            const conflict = state.data.conflicts?.find(c => c.phone === phone);
+            if (conflict) {
+                conflict.autoSelected = name;
+                
+                // עדכן גם ב-allData
+                const contact = state.data.allData?.find(c => c.phone === phone);
+                if (contact) contact.name = name;
+            }
+            
+            scheduleSave();
+            renderTabContent();
+            Toast.fire({ icon: 'success', title: `נבחר: ${name}` });
+        }
+        
+        // שמירה אוטומטית
+        let saveTimeout = null;
+        function scheduleSave() {
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveDraft, 1000);
+        }
+        
+        async function saveDraft() {
+            try {
+                await fetch(`/api/public/save-draft/${token}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        allData: state.data.allData,
+                        conflicts: state.data.conflicts,
+                        autoResolved: state.data.autoResolved,
+                        rejectedContacts: state.data.rejectedContacts,
+                        stats: state.data.stats
+                    })
+                });
+                console.log('Draft saved');
+            } catch (err) {
+                console.error('Save error:', err);
+            }
+        }
+        
+        // הגדרות
+        function showSettings() {
+            document.getElementById('settingsModal').classList.remove('hidden');
+            document.getElementById('settingsModal').classList.add('flex');
+            
+            document.getElementById('minLength').value = state.settings.nameRules?.minLength || 2;
+            
+            // כללי ניקוי
+            renderCleaningRules();
+            
+            // שמות אסורים
+            renderInvalidNames();
+        }
+        
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.add('hidden');
+            document.getElementById('settingsModal').classList.remove('flex');
+        }
+        
+        function renderCleaningRules() {
+            const rules = state.settings.cleaningRules || [];
+            document.getElementById('cleaningRulesList').innerHTML = rules.map((r, i) => `
+                <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                    <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleCleaningRule(${i})" class="w-4 h-4">
+                    <span class="flex-1 text-sm">${r.description || r.type}</span>
+                    <button onclick="removeCleaningRule(${i})" class="text-red-400 hover:text-red-600">✕</button>
+                </div>
+            `).join('') || '<p class="text-slate-400 text-sm">אין כללים</p>';
+        }
+        
+        function toggleCleaningRule(idx) {
+            if (state.settings.cleaningRules[idx]) {
+                state.settings.cleaningRules[idx].enabled = !state.settings.cleaningRules[idx].enabled;
+            }
+        }
+        
+        function removeCleaningRule(idx) {
+            state.settings.cleaningRules.splice(idx, 1);
+            renderCleaningRules();
+        }
+        
+        function renderInvalidNames() {
+            const names = state.settings.invalidNames || [];
+            document.getElementById('invalidNamesList').innerHTML = names.slice(0, 50).map(n => `
+                <div class="flex items-center gap-2 p-1 text-sm">
+                    <span class="flex-1 text-red-600">${n.name}</span>
+                    <span class="text-xs text-slate-400">${n.pattern_type}</span>
+                </div>
+            `).join('') || '<p class="text-slate-400 text-sm">אין שמות אסורים</p>';
+        }
+        
+        async function addInvalidName() {
+            const input = document.getElementById('newInvalidName');
+            const name = input.value.trim();
+            if (!name) return;
+            
+            await fetch(`/api/public/invalid-names/${token}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, patternType: 'exact' })
+            });
+            
+            state.settings.invalidNames.push({ name, pattern_type: 'exact' });
+            input.value = '';
+            renderInvalidNames();
+            Toast.fire({ icon: 'success', title: 'נוסף לרשימה השחורה' });
+        }
+        
+        async function saveSettings() {
+            try {
+                Swal.fire({ title: 'שומר הגדרות...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                
+                const nameRules = {
+                    minLength: parseInt(document.getElementById('minLength').value) || 2
+                };
+                
+                await fetch(`/api/public/settings/${token}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nameRules,
+                        cleaningRules: state.settings.cleaningRules
+                    })
+                });
+                
+                state.settings.nameRules = nameRules;
+                
+                Swal.close();
+                closeSettings();
+                Toast.fire({ icon: 'success', title: 'ההגדרות נשמרו' });
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
+        }
+        
+        // סיום
+        async function finalizeGroup() {
+            const result = await Swal.fire({
+                title: 'לסיים ולשמור?',
+                text: `${state.data.allData?.length || 0} אנשי קשר יישמרו`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '✅ שמור וסיים',
+                cancelButtonText: 'ביטול'
+            });
+            
+            if (!result.isConfirmed) return;
+            
+            Swal.fire({ title: 'שומר...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            try {
+                const res = await fetch(`/api/public/finalize/${token}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contacts: state.data.allData,
+                        stats: state.data.stats
+                    })
+                });
+                
+                const data = await res.json();
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'הרשימה נשמרה!',
+                    text: `${data.contactsCount?.toLocaleString() || 0} אנשי קשר נשמרו בהצלחה`,
+                    confirmButtonText: 'מעולה!'
+                });
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
+        }
+        
+        function downloadVcf() {
+            window.location.href = `/api/public/export/${token}`;
+        }
+        
+        // התחל
+        loadData();
+    </script>
+</body>
+</html>

@@ -179,6 +179,13 @@
                     <input type="text" id="defaultName" placeholder="שם ברירת מחדל לאיש קשר..." class="px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                     <input type="number" id="startSerial" value="1" placeholder="מספר התחלתי" class="px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
+                <div class="flex items-center gap-6 text-sm text-slate-600">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="allowShortPhones" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
+                        <span>אפשר מספרים קצרים</span>
+                        <span class="text-slate-400 text-xs">(ארגונים, סיסמאות וכו')</span>
+                    </label>
+                </div>
             </div>
             
             <div id="filesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
@@ -229,6 +236,7 @@
                     <p class="text-slate-500" id="groupInfo"></p>
                 </div>
                 <div class="flex gap-3 flex-wrap">
+                    <button onclick="revertToDraft()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-semibold">📝 חזור לעריכה</button>
                     <button onclick="addFilesToGroup()" class="btn-primary px-4 py-2 rounded-xl font-semibold">➕ הוסף קבצים</button>
                     <button onclick="checkDuplicates()" class="btn-warning px-4 py-2 rounded-xl font-semibold">🔍 בדוק כפילויות</button>
                     <button onclick="shareGroup()" class="px-4 py-2 rounded-xl font-semibold bg-green-100 text-green-700 hover:bg-green-200">🔗 שתף</button>
@@ -765,27 +773,102 @@
             }
         }
 
+        async function revertToDraft() {
+            const result = await Swal.fire({ 
+                title: 'חזור למצב עריכה?', 
+                text: 'הרשימה תהפוך לטיוטה ותוכל לערוך, לשנות שמות ולבצע שינויים נוספים', 
+                icon: 'question', 
+                showCancelButton: true,
+                confirmButtonText: '✅ כן, חזור לעריכה',
+                cancelButtonText: 'ביטול'
+            });
+            
+            if (result.isConfirmed) {
+                Swal.fire({ title: 'מחזיר למצב עריכה...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                try {
+                    await api(`/api/groups/${state.currentGroupId}/revert-to-draft`, { method: 'POST' });
+                    Swal.close();
+                    Toast.fire({ icon: 'success', title: 'הרשימה הוחזרה למצב טיוטה' });
+                    resumeDraft(state.currentGroupId);
+                } catch (err) {
+                    Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+                }
+            }
+        }
+
         function exportGroup(type) {
             window.location.href = `/api/export/${type}/${state.currentGroupId}`;
         }
 
         async function shareGroup() {
+            // שלב 1: בחר סוג שיתוף
+            const modeResult = await Swal.fire({
+                title: '🔗 בחר סוג שיתוף',
+                html: `
+                    <div class="text-right space-y-4">
+                        <div class="p-4 border-2 border-slate-200 rounded-xl cursor-pointer hover:border-indigo-500 transition" onclick="document.getElementById('shareSimple').checked = true">
+                            <label class="flex items-start gap-3 cursor-pointer">
+                                <input type="radio" name="shareMode" id="shareSimple" value="simple" checked class="mt-1">
+                                <div>
+                                    <p class="font-bold text-slate-800">📋 תצוגה פשוטה</p>
+                                    <p class="text-sm text-slate-500">הקליינט יכול לראות את הרשימה, לערוך שמות ולהוריד VCF</p>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="p-4 border-2 border-slate-200 rounded-xl cursor-pointer hover:border-indigo-500 transition" onclick="document.getElementById('shareFull').checked = true">
+                            <label class="flex items-start gap-3 cursor-pointer">
+                                <input type="radio" name="shareMode" id="shareFull" value="full" class="mt-1">
+                                <div>
+                                    <p class="font-bold text-slate-800">⚙️ תצוגה מלאה (עריכה מתקדמת)</p>
+                                    <p class="text-sm text-slate-500">הקליינט רואה הכל כמו שאתה רואה - כולל קונפליקטים, נדחו, הגדרות ניקוי, ויכול לשמור סופית</p>
+                                    <p class="text-xs text-amber-600 mt-1">⚠️ הקליינט יכול לשנות את ההגדרות שלך!</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'המשך ▶',
+                cancelButtonText: 'ביטול'
+            });
+            
+            if (!modeResult.isConfirmed) return;
+            
+            const mode = document.querySelector('input[name="shareMode"]:checked')?.value || 'simple';
+            
             try {
-                const data = await api(`/api/groups/${state.currentGroupId}/share`, { method: 'POST' });
+                const data = await api(`/api/groups/${state.currentGroupId}/share`, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
                 const fullUrl = `${window.location.origin}${data.url}`;
                 
+                const features = mode === 'full' ? `
+                    <ul class="text-sm text-slate-500 space-y-1">
+                        <li>✅ לצפות בכל הנתונים (אושרו, נדחו, קונפליקטים)</li>
+                        <li>✅ לערוך שמות ולפתור קונפליקטים</li>
+                        <li>✅ לשנות הגדרות ניקוי שמות</li>
+                        <li>✅ לשמור את הרשימה הסופית</li>
+                        <li>✅ להוריד קובץ VCF</li>
+                        <li>❌ לא יוכל להוסיף קבצים או ליצור רשימות חדשות</li>
+                    </ul>
+                ` : `
+                    <ul class="text-sm text-slate-500 space-y-1">
+                        <li>✅ לצפות באנשי הקשר</li>
+                        <li>✅ לערוך שמות</li>
+                        <li>✅ לתקן כפילויות</li>
+                        <li>✅ להוריד קובץ VCF</li>
+                        <li>❌ לא יוכל להוסיף אנשי קשר חדשים</li>
+                    </ul>
+                `;
+                
                 const result = await Swal.fire({
-                    title: '🔗 לינק שיתוף',
+                    title: `🔗 לינק שיתוף ${mode === 'full' ? '(מלא)' : '(פשוט)'}`,
                     html: `
                         <div class="text-right space-y-4">
                             <p class="text-slate-600">כל מי שיקבל את הלינק יוכל:</p>
-                            <ul class="text-sm text-slate-500 space-y-1">
-                                <li>✅ לצפות באנשי הקשר</li>
-                                <li>✅ לערוך שמות</li>
-                                <li>✅ לתקן כפילויות</li>
-                                <li>✅ להוריד קובץ VCF</li>
-                                <li>❌ לא יוכל להוסיף אנשי קשר חדשים</li>
-                            </ul>
+                            ${features}
                             <div class="bg-slate-100 rounded-xl p-3">
                                 <input type="text" value="${fullUrl}" readonly 
                                        id="shareUrlInput"
@@ -1082,6 +1165,7 @@
             const targetGroupName = document.getElementById('targetGroupName').value || 'רשימה חדשה';
             const defaultName = document.getElementById('defaultName').value;
             const startSerial = document.getElementById('startSerial').value;
+            const allowShortPhones = document.getElementById('allowShortPhones')?.checked || false;
             
             const fileNames = state.selectedFiles.map(id => {
                 const f = state.files.find(f => f.id === id);
@@ -1145,7 +1229,7 @@
                 const result = await api('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ processingData, targetGroupName, defaultName, startSerial })
+                    body: JSON.stringify({ processingData, targetGroupName, defaultName, startSerial, allowShortPhones })
                 });
                 
                 clearInterval(progressInterval);

@@ -37,18 +37,25 @@ const auth = (req, res, next) => {
 
 // ==================== UTILITY FUNCTIONS ====================
 
-const normalizePhone = (p) => {
+const normalizePhone = (p, options = {}) => {
+    const { allowShort = false, minLength = 7 } = options;
+    
     if(!p) return { normalized: null, reason: 'empty_phone' };
     let c = p.toString().replace(/\D/g, '');
     if(!c || c.length === 0) return { normalized: null, reason: 'empty_phone' };
-    if(c.length < 7) return { normalized: null, reason: 'too_short', original: c };
+    
+    // אם מאפשרים מספרים קצרים, המינימום הוא 1; אחרת לפי ההגדרה
+    const effectiveMinLength = allowShort ? 1 : minLength;
+    if(c.length < effectiveMinLength) return { normalized: null, reason: 'too_short', original: c };
     if(c.length > 15) return { normalized: null, reason: 'too_long', original: c };
     
-    // נרמול מספרים ישראליים
-    if(c.startsWith('05')) c = '972' + c.substring(1);
-    else if(c.startsWith('5') && c.length === 9) c = '972' + c;
-    else if(c.startsWith('00972')) c = '972' + c.substring(5);
-    else if(c.startsWith('972') && c.length >= 11) { /* כבר מנורמל */ }
+    // נרמול מספרים ישראליים (רק למספרים ארוכים)
+    if(c.length >= 9) {
+        if(c.startsWith('05')) c = '972' + c.substring(1);
+        else if(c.startsWith('5') && c.length === 9) c = '972' + c;
+        else if(c.startsWith('00972')) c = '972' + c.substring(5);
+        // אם מתחיל ב-972, כבר מנורמל
+    }
     
     return { normalized: c, reason: null };
 };
@@ -472,7 +479,8 @@ app.delete('/api/files/:id', auth, async (req, res) => {
 // ==================== ANALYZE & PROCESS ====================
 
 app.post('/api/analyze', auth, async (req, res) => {
-    const { processingData, defaultName, startSerial, groupId, targetGroupName, addToGroupId } = req.body;
+    const { processingData, defaultName, startSerial, groupId, targetGroupName, addToGroupId, allowShortPhones } = req.body;
+    const phoneOptions = { allowShort: allowShortPhones || false };
     
     try {
         let responseData;
@@ -610,7 +618,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                 
                 for (const row of rows) {
                     const rawPhone = row[item.mapping.phoneField];
-                    const phoneResult = normalizePhone(rawPhone);
+                    const phoneResult = normalizePhone(rawPhone, phoneOptions);
                     
                     if (!phoneResult.normalized) {
                         fileStats.rejected++;
@@ -966,6 +974,61 @@ app.delete('/api/groups/:id', auth, async (req, res) => {
     }
 });
 
+// החזרת רשימה שמורה למצב טיוטה
+app.post('/api/groups/:id/revert-to-draft', auth, async (req, res) => {
+    try {
+        const groupId = req.params.id;
+        console.log(`[REVERT] Starting revert to draft for group ${groupId}`);
+        
+        // קבל את כל אנשי הקשר של הקבוצה
+        const contactsRes = await pool.query(
+            `SELECT full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data 
+             FROM contacts WHERE group_id = $1`,
+            [groupId]
+        );
+        
+        const contacts = contactsRes.rows;
+        console.log(`[REVERT] Found ${contacts.length} contacts`);
+        
+        // בניית מבנה הטיוטה
+        const allData = contacts.map(c => ({
+            name: c.full_name,
+            phone: c.phone_normalized || c.phone,
+            phoneRaw: c.phone,
+            email: c.email || '',
+            sourceFile: c.source_file_name || '',
+            sourceFileId: c.source_file_id,
+            originalData: c.original_data || {}
+        }));
+        
+        const draftData = {
+            allData,
+            conflicts: [],
+            autoResolved: [],
+            rejectedContacts: [],
+            stats: {
+                totalParsed: contacts.length,
+                totalValid: contacts.length,
+                totalRejected: 0,
+                totalDuplicates: 0,
+                byFile: []
+            }
+        };
+        
+        // עדכן את הקבוצה לסטטוס טיוטה
+        await pool.query(
+            `UPDATE contact_groups SET status = 'draft', draft_data = $2 WHERE id = $1`,
+            [groupId, JSON.stringify(draftData)]
+        );
+        
+        console.log(`[REVERT] Group ${groupId} reverted to draft`);
+        res.json({ success: true, contactsCount: contacts.length });
+    } catch (err) {
+        console.error('[REVERT] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ==================== VERSIONING ====================
 
 app.post('/api/groups/:id/save-version', auth, async (req, res) => {
@@ -1167,15 +1230,21 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
 app.post('/api/groups/:id/share', auth, async (req, res) => {
     try {
         const groupId = req.params.id;
-        let r = await pool.query('SELECT share_token FROM contact_groups WHERE id = $1', [groupId]);
+        const { mode = 'simple' } = req.body; // simple או full
+        
+        let r = await pool.query('SELECT share_token, share_mode FROM contact_groups WHERE id = $1', [groupId]);
         
         let token = r.rows[0]?.share_token;
-        if (!token) {
+        const existingMode = r.rows[0]?.share_mode;
+        
+        // אם אין טוקן או המצב השתנה, צור טוקן חדש
+        if (!token || existingMode !== mode) {
             token = crypto.randomBytes(32).toString('hex');
-            await pool.query('UPDATE contact_groups SET share_token = $1 WHERE id = $2', [token, groupId]);
+            await pool.query('UPDATE contact_groups SET share_token = $1, share_mode = $2 WHERE id = $3', [token, mode, groupId]);
         }
         
-        res.json({ token, url: `/share/${token}` });
+        const url = mode === 'full' ? `/share-full/${token}` : `/share/${token}`;
+        res.json({ token, url, mode });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1191,12 +1260,24 @@ app.delete('/api/groups/:id/share', auth, async (req, res) => {
     }
 });
 
-// דף שיתוף ציבורי
+// דף שיתוף ציבורי - פשוט
 app.get('/share/:token', async (req, res) => {
     try {
         const r = await pool.query('SELECT id FROM contact_groups WHERE share_token = $1', [req.params.token]);
         if (!r.rows[0]) return res.status(404).send('הקישור לא נמצא או פג תוקף');
         res.sendFile(path.join(__dirname, 'share.html'));
+    } catch (err) {
+        res.status(500).send('שגיאה');
+    }
+});
+
+// דף שיתוף ציבורי - מלא (עם עריכה מלאה)
+app.get('/share-full/:token', async (req, res) => {
+    try {
+        const r = await pool.query('SELECT id, share_mode FROM contact_groups WHERE share_token = $1', [req.params.token]);
+        if (!r.rows[0]) return res.status(404).send('הקישור לא נמצא או פג תוקף');
+        if (r.rows[0].share_mode !== 'full') return res.redirect(`/share/${req.params.token}`);
+        res.sendFile(path.join(__dirname, 'share-full.html'));
     } catch (err) {
         res.status(500).send('שגיאה');
     }
@@ -1369,6 +1450,254 @@ app.get('/api/public/export/:token', async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${g.rows[0].name}.vcf"`);
         res.send('\ufeff' + vcf);
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== PUBLIC FULL SHARE MODE API ====================
+
+// בדיקת הרשאות שיתוף מלא
+const verifyFullShare = async (token) => {
+    const r = await pool.query('SELECT id, share_mode FROM contact_groups WHERE share_token = $1', [token]);
+    if (!r.rows[0]) return null;
+    if (r.rows[0].share_mode !== 'full') return null;
+    return r.rows[0].id;
+};
+
+// קבלת נתוני טיוטה מלאים לשיתוף
+app.get('/api/public/full-data/:token', async (req, res) => {
+    try {
+        const groupId = await verifyFullShare(req.params.token);
+        if (!groupId) return res.status(403).json({ error: 'אין הרשאה לתצוגה מלאה' });
+        
+        const g = await pool.query(`
+            SELECT id, name, status, draft_data, stats, version,
+                   to_char(updated_at, 'DD/MM/YYYY HH24:MI') as updated_at_formatted
+            FROM contact_groups WHERE id = $1
+        `, [groupId]);
+        
+        const group = g.rows[0];
+        
+        // אם יש draft_data, החזר אותו
+        if (group.draft_data) {
+            return res.json({
+                ...group.draft_data,
+                groupId: group.id,
+                targetGroupName: group.name,
+                status: group.status
+            });
+        }
+        
+        // אחרת, בנה את הנתונים מאנשי הקשר
+        const contactsRes = await pool.query(
+            `SELECT full_name, phone, phone_normalized, email, source_file_name, source_file_id, original_data 
+             FROM contacts WHERE group_id = $1`,
+            [groupId]
+        );
+        
+        const allData = contactsRes.rows.map(c => ({
+            name: c.full_name,
+            phone: c.phone_normalized || c.phone,
+            phoneRaw: c.phone,
+            email: c.email || '',
+            sourceFile: c.source_file_name || '',
+            sourceFileId: c.source_file_id,
+            originalData: c.original_data || {}
+        }));
+        
+        res.json({
+            allData,
+            conflicts: [],
+            autoResolved: [],
+            rejectedContacts: [],
+            stats: group.stats || { totalParsed: allData.length, totalValid: allData.length },
+            groupId: group.id,
+            targetGroupName: group.name,
+            status: group.status
+        });
+    } catch (err) {
+        console.error('[PUBLIC FULL] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// שמירת טיוטה בשיתוף מלא
+app.post('/api/public/save-draft/:token', async (req, res) => {
+    try {
+        const groupId = await verifyFullShare(req.params.token);
+        if (!groupId) return res.status(403).json({ error: 'אין הרשאה' });
+        
+        const { allData, conflicts, autoResolved, rejectedContacts, stats } = req.body;
+        
+        const draftData = { allData, conflicts, autoResolved, rejectedContacts, stats };
+        await pool.query(
+            `UPDATE contact_groups SET draft_data = $2, status = 'draft' WHERE id = $1`,
+            [groupId, JSON.stringify(draftData)]
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// קבלת הגדרות לשיתוף מלא
+app.get('/api/public/settings/:token', async (req, res) => {
+    try {
+        const groupId = await verifyFullShare(req.params.token);
+        if (!groupId) return res.status(403).json({ error: 'אין הרשאה' });
+        
+        const [cleaningRules, nameRules, invalidNames] = await Promise.all([
+            pool.query("SELECT value FROM system_settings WHERE key = 'cleaning_rules'"),
+            pool.query("SELECT value FROM system_settings WHERE key = 'name_rules'"),
+            pool.query("SELECT id, name, pattern_type FROM invalid_names ORDER BY id")
+        ]);
+        
+        res.json({
+            cleaningRules: cleaningRules.rows[0]?.value || getDefaultCleaningRules(),
+            nameRules: nameRules.rows[0]?.value || {},
+            invalidNames: invalidNames.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// עדכון הגדרות מקליינט (שיתוף מלא)
+app.put('/api/public/settings/:token', async (req, res) => {
+    try {
+        const groupId = await verifyFullShare(req.params.token);
+        if (!groupId) return res.status(403).json({ error: 'אין הרשאה' });
+        
+        const { cleaningRules, nameRules } = req.body;
+        
+        if (cleaningRules) {
+            await pool.query(
+                `INSERT INTO system_settings (key, value) VALUES ('cleaning_rules', $1)
+                 ON CONFLICT (key) DO UPDATE SET value = $1`,
+                [JSON.stringify(cleaningRules)]
+            );
+            cleaningRulesCache = null;
+        }
+        
+        if (nameRules) {
+            await pool.query(
+                `INSERT INTO system_settings (key, value) VALUES ('name_rules', $1)
+                 ON CONFLICT (key) DO UPDATE SET value = $1`,
+                [JSON.stringify(nameRules)]
+            );
+            nameRulesCache = null;
+        }
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// הוספת שם לרשימה שחורה מקליינט
+app.post('/api/public/invalid-names/:token', async (req, res) => {
+    try {
+        const groupId = await verifyFullShare(req.params.token);
+        if (!groupId) return res.status(403).json({ error: 'אין הרשאה' });
+        
+        const { name, patternType = 'exact' } = req.body;
+        if (!name) return res.status(400).json({ error: 'חסר שם' });
+        
+        await pool.query(
+            'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [name.trim(), patternType]
+        );
+        invalidNamesCache = null;
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// סיום ושמירה סופית מקליינט (שיתוף מלא)
+app.post('/api/public/finalize/:token', async (req, res) => {
+    try {
+        const groupId = await verifyFullShare(req.params.token);
+        if (!groupId) return res.status(403).json({ error: 'אין הרשאה' });
+        
+        const { contacts, stats } = req.body;
+        console.log(`[PUBLIC FINALIZE] Starting: groupId=${groupId}, contacts=${contacts?.length}`);
+        
+        const resolutions = await pool.query('SELECT phone, resolved_name FROM import_resolutions');
+        const resMap = new Map(resolutions.rows.map(r => [r.phone, r.resolved_name]));
+
+        const finalContacts = [];
+        const usedNames = new Set();
+
+        for (const c of contacts) {
+            let name = resMap.get(c.phone) || c.name;
+            
+            if (!name || !name.trim() || await isInvalidName(name) || /^\s*\(\d+\)\s*$/.test(name)) {
+                const baseName = getBaseName(name);
+                name = baseName && baseName.trim() && !await isInvalidName(baseName) && !/^\s*\(\d+\)\s*$/.test(baseName) 
+                    ? baseName 
+                    : `איש קשר ${c.phone.slice(-4)}`;
+            }
+            
+            name = makeUniqueName(name, usedNames, c.phone);
+            
+            finalContacts.push({ 
+                phone: c.phone, 
+                name, 
+                email: c.email || '',
+                sourceFile: c.sourceFile || '',
+                sourceFileId: c.sourceFileId || null,
+                originalData: c.originalData || {}
+            });
+        }
+
+        // מחק אנשי קשר קיימים
+        await pool.query('DELETE FROM contacts WHERE group_id = $1', [groupId]);
+        
+        // הכנס חדשים
+        const truncate = (s, max) => s && s.length > max ? s.substring(0, max) : s;
+        let batch = [];
+        for (const c of finalContacts) {
+            batch.push([
+                groupId, 
+                truncate(c.name, 250), 
+                c.phone, 
+                c.phone, 
+                truncate(c.email, 250), 
+                c.sourceFileId, 
+                truncate(c.sourceFile, 450), 
+                JSON.stringify(c.originalData), 
+                '{}'
+            ]);
+            if (batch.length >= 1000) {
+                await pool.query(
+                    `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                     SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::jsonb[], $9::jsonb[])`,
+                    [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3]), batch.map(r=>r[4]), batch.map(r=>r[5]), batch.map(r=>r[6]), batch.map(r=>r[7]), batch.map(r=>r[8])]
+                );
+                batch = [];
+            }
+        }
+        if (batch.length > 0) {
+            await pool.query(
+                `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                 SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::jsonb[], $9::jsonb[])`,
+                [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3]), batch.map(r=>r[4]), batch.map(r=>r[5]), batch.map(r=>r[6]), batch.map(r=>r[7]), batch.map(r=>r[8])]
+            );
+        }
+        
+        // עדכן סטטוס
+        await pool.query(
+            `UPDATE contact_groups SET status = 'ready', draft_data = NULL, stats = $2 WHERE id = $1`,
+            [groupId, JSON.stringify(stats || {})]
+        );
+        
+        console.log(`[PUBLIC FINALIZE] Complete: ${finalContacts.length} contacts saved`);
+        res.json({ success: true, contactsCount: finalContacts.length });
+    } catch (err) {
+        console.error('[PUBLIC FINALIZE] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1668,9 +1997,25 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
     }
 });
 
+// ==================== DATABASE MIGRATIONS ====================
+
+async function runMigrations() {
+    try {
+        // הוסף עמודת share_mode אם לא קיימת
+        await pool.query(`
+            ALTER TABLE contact_groups 
+            ADD COLUMN IF NOT EXISTS share_mode VARCHAR(20) DEFAULT 'simple'
+        `);
+        console.log('[MIGRATIONS] Database migrations completed');
+    } catch (err) {
+        console.error('[MIGRATIONS] Error:', err.message);
+    }
+}
+
 // ==================== START SERVER ====================
 
-app.listen(3377, () => {
+app.listen(3377, async () => {
     console.log('[VCF Server] Running on port 3377');
     console.log('[VCF Server] Database:', process.env.DB_HOST || '127.0.0.1', ':', process.env.DB_PORT || 3378);
+    await runMigrations();
 });
