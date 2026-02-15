@@ -1,9 +1,12 @@
 {
   "dependencies": {
+    "connect-pg-simple": "^10.0.0",
     "csv-parser": "^3.2.0",
     "express": "^5.2.1",
     "express-session": "^1.18.2",
     "multer": "^2.0.2",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
     "pg": "^8.16.3"
   }
 }

@@ -8,6 +8,9 @@ services:
       - ./storage/uploads:/app/storage/uploads
     environment:
       - NODE_ENV=production
+      # Google OAuth - הגדר את הערכים בשרת
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     logging:
       driver: "json-file"
       options:

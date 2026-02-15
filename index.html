@@ -79,6 +79,29 @@
                     <span class="flex items-center gap-2">📁 העלאת קבצים</span>
                 </button>
                 <input type="file" id="fileInput" multiple accept=".vcf,.csv" class="hidden" onchange="handleUpload(event)">
+                
+                <!-- User Menu -->
+                <div class="relative mr-2">
+                    <button onclick="toggleUserMenu()" class="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 transition">
+                        <div id="userAvatar" class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                            <span class="text-indigo-600 font-bold text-sm" id="userInitial">?</span>
+                        </div>
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div id="userMenu" class="hidden absolute left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50">
+                        <div class="px-4 py-2 border-b border-slate-100">
+                            <p class="text-sm font-bold text-slate-700" id="userEmail">טוען...</p>
+                        </div>
+                        <a href="/logout" class="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                            </svg>
+                            יציאה מהמערכת
+                        </a>
+                    </div>
+                </div>
             </nav>
         </div>
     </header>
@@ -1973,6 +1996,40 @@
             }
         }
 
+        // ==================== USER MENU ====================
+        function toggleUserMenu() {
+            const menu = document.getElementById('userMenu');
+            menu.classList.toggle('hidden');
+        }
+        
+        // סגור תפריט משתמש בלחיצה מחוץ לו
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('userMenu');
+            const button = e.target.closest('button');
+            if (!e.target.closest('#userMenu') && !button?.onclick?.toString().includes('toggleUserMenu')) {
+                menu?.classList.add('hidden');
+            }
+        });
+        
+        async function loadUserInfo() {
+            try {
+                const res = await fetch('/api/me');
+                if (res.ok) {
+                    const data = await res.json();
+                    const email = data.user?.email || 'user';
+                    document.getElementById('userEmail').textContent = email;
+                    document.getElementById('userInitial').textContent = email.charAt(0).toUpperCase();
+                    
+                    // אם יש תמונה מגוגל
+                    if (data.user?.picture) {
+                        document.getElementById('userAvatar').innerHTML = `<img src="${data.user.picture}" class="w-8 h-8 rounded-full">`;
+                    }
+                }
+            } catch (e) {
+                console.log('Could not load user info');
+            }
+        }
+        
         // ==================== INIT ====================
         document.addEventListener('DOMContentLoaded', async () => {
             // Check auth on load
@@ -1985,6 +2042,9 @@
             } catch (e) {
                 // Network error - might be ok
             }
+            
+            // טען מידע על המשתמש
+            loadUserInfo();
             showView('dashboard');
         });
     </script>

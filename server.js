@@ -4,6 +4,9 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const csv = require('csv-parser');
 const crypto = require('crypto');
 
@@ -25,12 +28,66 @@ const pool = new Pool({
     port: parseInt(process.env.DB_PORT) || 3378 
 });
 
+// Session store בדאטאבייס - שורד רענון ורסטארט
 app.use(express.json({limit: '350mb'}));
 app.use(express.static(__dirname));
-app.use(session({ secret: 'vcf-luxury-elite-v8-final', resave: true, saveUninitialized: false, cookie: { maxAge: 24 * 60 * 60 * 1000 } }));
+app.use(session({ 
+    store: new pgSession({
+        pool: pool,
+        tableName: 'user_sessions',
+        createTableIfMissing: true
+    }),
+    secret: 'vcf-luxury-elite-v8-final-2024', 
+    resave: false, 
+    saveUninitialized: false, 
+    cookie: { 
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 ימים
+        secure: false, // שנה ל-true אם יש HTTPS
+        httpOnly: true,
+        sameSite: 'lax'
+    } 
+}));
+
+// Passport setup
+app.use(passport.initialize());
+app.use(passport.session());
+
+// רשימת מיילים מורשים
+const ALLOWED_EMAILS = [
+    'office@neriyabudraham.co.il',
+    'neriyabudraham@gmail.com'
+];
+
+// Google OAuth Strategy - מוגדר רק אם יש credentials
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+
+if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
+    passport.use(new GoogleStrategy({
+        clientID: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
+        callbackURL: '/auth/google/callback'
+    }, (accessToken, refreshToken, profile, done) => {
+        const email = profile.emails?.[0]?.value;
+        if (email && ALLOWED_EMAILS.includes(email.toLowerCase())) {
+            return done(null, { email, name: profile.displayName, picture: profile.photos?.[0]?.value });
+        }
+        return done(null, false, { message: 'Email not authorized' });
+    }));
+    console.log('[AUTH] Google OAuth enabled');
+} else {
+    console.log('[AUTH] Google OAuth disabled - set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET env vars');
+}
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
 
 const auth = (req, res, next) => {
     if (req.session && req.session.authenticated) return next();
+    if (req.isAuthenticated && req.isAuthenticated()) {
+        req.session.authenticated = true;
+        return next();
+    }
     if (req.path.startsWith('/api')) return res.status(401).json({ error: 'Session Expired' });
     res.redirect('/login');
 };
@@ -396,14 +453,58 @@ function decodeVcfValue(val, upperLine) {
 
 // ==================== AUTH ROUTES ====================
 
-app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
+app.get('/login', (req, res) => {
+    // אם כבר מחובר, הפנה לדף הבית
+    if (req.session?.authenticated || (req.isAuthenticated && req.isAuthenticated())) {
+        return res.redirect('/');
+    }
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+// התחברות רגילה עם מייל
 app.post('/login', (req, res) => {
-    if (req.body.email === 'office@neriyabudraham.co.il') { 
-        req.session.authenticated = true; 
+    const email = req.body.email?.toLowerCase();
+    if (email && ALLOWED_EMAILS.includes(email)) { 
+        req.session.authenticated = true;
+        req.session.user = { email };
         return res.json({ success: true }); 
     }
-    res.status(401).send();
+    res.status(401).json({ error: 'Email not authorized' });
 });
+
+// Google OAuth - התחלת התהליך
+app.get('/auth/google', passport.authenticate('google', { 
+    scope: ['profile', 'email'] 
+}));
+
+// Google OAuth - callback
+app.get('/auth/google/callback', 
+    passport.authenticate('google', { failureRedirect: '/login?error=unauthorized' }),
+    (req, res) => {
+        req.session.authenticated = true;
+        req.session.user = req.user;
+        res.redirect('/');
+    }
+);
+
+// יציאה מהמערכת
+app.get('/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (req.logout) {
+            req.logout(() => {});
+        }
+        res.redirect('/login');
+    });
+});
+
+// קבלת מידע על המשתמש המחובר
+app.get('/api/me', auth, (req, res) => {
+    res.json({
+        authenticated: true,
+        user: req.session.user || req.user || { email: 'unknown' }
+    });
+});
+
 app.get('/', auth, (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // ==================== UPLOAD & PARSE ====================
