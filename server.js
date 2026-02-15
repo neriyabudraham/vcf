@@ -65,6 +65,22 @@ const getBaseName = (name) => {
     return name.toString().replace(/\s?\(\d+\)$/g, '').trim();
 };
 
+// בדיקה אם שם הוא שם דיפולטיבי (איש קשר XXX, צופה XXX וכו')
+const isDefaultName = (name) => {
+    if (!name) return false;
+    const s = name.toString().trim();
+    // שם שמתחיל עם מילה ואחריה מספר
+    return /^(איש קשר|צופה|contact|משתמש|לקוח|user|client)\s+\d+$/i.test(s) ||
+           /^(איש קשר|צופה|contact|משתמש|לקוח|user|client)\s+\d+\s*\(\d+\)$/i.test(s);
+};
+
+// חילוץ המספר מתוך שם דיפולטיבי
+const getDefaultNameNumber = (name) => {
+    if (!name) return Infinity;
+    const match = name.toString().match(/(\d+)(?:\s*\(\d+\))?$/);
+    return match ? parseInt(match[1]) : Infinity;
+};
+
 // בדיקה אם שם ברשימת השמות הלא תקינים
 let invalidNamesCache = null;
 async function loadInvalidNames() {
@@ -534,6 +550,7 @@ app.post('/api/analyze', auth, async (req, res) => {
             for (const conflict of responseData.conflicts || []) {
                 const cleanedNames = [];
                 const newScores = [];
+                const sources = [];
                 
                 for (let i = 0; i < conflict.names.length; i++) {
                     let cleanedName = await cleanName(conflict.names[i]);
@@ -543,17 +560,50 @@ app.post('/api/analyze', auth, async (req, res) => {
                     }
                     cleanedNames.push(cleanedName);
                     newScores.push(await scoreName(cleanedName));
+                    sources.push(conflict.sources?.[i] || '');
+                }
+                
+                // סנן שמות דיפולטיביים אם יש שמות אמיתיים
+                const realNames = cleanedNames.filter(n => !isDefaultName(n));
+                
+                let filteredNames, filteredScores, filteredSources;
+                if (realNames.length > 0) {
+                    // יש שמות אמיתיים - השאר רק אותם
+                    filteredNames = [];
+                    filteredScores = [];
+                    filteredSources = [];
+                    for (let i = 0; i < cleanedNames.length; i++) {
+                        if (!isDefaultName(cleanedNames[i]) && !filteredNames.includes(cleanedNames[i])) {
+                            filteredNames.push(cleanedNames[i]);
+                            filteredScores.push(newScores[i]);
+                            filteredSources.push(sources[i]);
+                        }
+                    }
+                } else {
+                    // כל השמות דיפולטיביים - בחר את המספר הנמוך ביותר
+                    let lowestNum = Infinity;
+                    let lowestIdx = 0;
+                    for (let i = 0; i < cleanedNames.length; i++) {
+                        const num = getDefaultNameNumber(cleanedNames[i]);
+                        if (num < lowestNum) {
+                            lowestNum = num;
+                            lowestIdx = i;
+                        }
+                    }
+                    filteredNames = [cleanedNames[lowestIdx]];
+                    filteredScores = [newScores[lowestIdx]];
+                    filteredSources = [sources[lowestIdx]];
                 }
                 
                 // הסר שמות כפולים
                 const uniqueNames = [];
                 const uniqueScores = [];
                 const uniqueSources = [];
-                for (let i = 0; i < cleanedNames.length; i++) {
-                    if (!uniqueNames.includes(cleanedNames[i])) {
-                        uniqueNames.push(cleanedNames[i]);
-                        uniqueScores.push(newScores[i]);
-                        uniqueSources.push(conflict.sources?.[i] || '');
+                for (let i = 0; i < filteredNames.length; i++) {
+                    if (!uniqueNames.includes(filteredNames[i])) {
+                        uniqueNames.push(filteredNames[i]);
+                        uniqueScores.push(filteredScores[i]);
+                        uniqueSources.push(filteredSources[i]);
                     }
                 }
                 
@@ -570,7 +620,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                 if (contact) contact.name = conflict.autoSelected;
             }
             
-            // הסר קונפליקטים עם שם אחד בלבד (אחרי דדופליקציה)
+            // הסר קונפליקטים עם שם אחד בלבד (אחרי סינון שמות דיפולטיביים)
             responseData.conflicts = (responseData.conflicts || []).filter(c => c.names.length > 1);
             
             console.log('[ANALYZE] Re-applied cleaning rules to draft');
@@ -655,6 +705,32 @@ app.post('/api/analyze', auth, async (req, res) => {
                         const existing = phoneMap.get(phone);
                         fileStats.duplicates++;
                         
+                        const existingIsDefault = isDefaultName(existing.name);
+                        const newIsDefault = isDefaultName(name);
+                        
+                        // אם שניהם שמות דיפולטיביים - השאר את זה עם המספר הנמוך
+                        if (existingIsDefault && newIsDefault) {
+                            const existingNum = getDefaultNameNumber(existing.name);
+                            const newNum = getDefaultNameNumber(name);
+                            if (newNum < existingNum) {
+                                existing.name = name;
+                            }
+                            // לא יוצרים קונפליקט בין שמות דיפולטיביים
+                            continue;
+                        }
+                        
+                        // אם רק החדש דיפולטיבי - התעלם ממנו
+                        if (newIsDefault && !existingIsDefault) {
+                            continue;
+                        }
+                        
+                        // אם רק הקיים דיפולטיבי - החלף בחדש
+                        if (existingIsDefault && !newIsDefault) {
+                            existing.name = name;
+                            continue;
+                        }
+                        
+                        // שניהם שמות אמיתיים
                         if (getBaseName(existing.name) === getBaseName(name)) {
                             // שמות דומים - בחר את הטוב יותר לפי כללי הניקוד
                             const existingScore = await scoreName(existing.name);
@@ -669,7 +745,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                                 if (!ar.allNames.includes(name)) ar.allNames.push(name);
                             }
                         } else if (existing.name !== name) {
-                            // שמות שונים - קונפליקט (אלא אם נבחר אוטומטית)
+                            // שמות שונים - קונפליקט
                             const existingScore = await scoreName(existing.name);
                             const newScore = await scoreName(name);
                             
