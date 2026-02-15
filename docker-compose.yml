@@ -3,30 +3,13 @@ services:
     build: .
     container_name: vcf-bot
     restart: unless-stopped
-    ports:
-      - "3377:3377"
+    network_mode: host
     volumes:
-      # Persist uploads between restarts
       - ./storage/uploads:/app/storage/uploads
     environment:
       - NODE_ENV=production
-      - DB_HOST=host.docker.internal
-      - DB_PORT=3378
-      - DB_USER=postgres
-      - DB_PASSWORD=BotomatAdmin2025
-      - DB_NAME=vcf_db
-    # Use host network to access local PostgreSQL on port 3378
-    # Alternative: use extra_hosts to map host.docker.internal
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - vcf-network
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
-networks:
-  vcf-network:
-    driver: bridge

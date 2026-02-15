@@ -157,6 +157,7 @@ app.post('/login', (req, res) => {
 });
 app.get('/', auth, (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
+// Upload עם SSE לפרוגרס בזמן אמת
 app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
     try {
         const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
@@ -192,6 +193,30 @@ app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
         res.status(500).json({ error: err.message }); 
     }
 });
+
+// SSE endpoint לפרוגרס עיבוד בזמן אמת
+app.get('/api/upload-progress/:uploadId', auth, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    const uploadId = req.params.uploadId;
+    
+    // שמור את ה-response לעדכונים
+    if (!global.uploadProgress) global.uploadProgress = {};
+    global.uploadProgress[uploadId] = res;
+    
+    req.on('close', () => {
+        delete global.uploadProgress[uploadId];
+    });
+});
+
+// פונקציה לשליחת עדכון פרוגרס
+function sendProgress(uploadId, percent, message) {
+    if (global.uploadProgress && global.uploadProgress[uploadId]) {
+        global.uploadProgress[uploadId].write(`data: ${JSON.stringify({ percent, message })}\n\n`);
+    }
+}
 
 app.get('/api/files', auth, async (req, res) => {
     const r = await pool.query("SELECT * FROM uploaded_files WHERE status = 'pending' ORDER BY id DESC");
