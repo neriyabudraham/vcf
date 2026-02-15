@@ -731,6 +731,31 @@ app.post('/api/resolve', auth, async (req, res) => {
     }
 });
 
+// שמירת שינויים בטיוטה
+app.post('/api/draft/:id/save', auth, async (req, res) => {
+    try {
+        const { allData, conflicts, autoResolved, rejectedContacts, stats } = req.body;
+        
+        const draftData = {
+            allData: allData || [],
+            conflicts: conflicts || [],
+            autoResolved: autoResolved || [],
+            rejectedContacts: rejectedContacts || [],
+            stats: stats || {}
+        };
+        
+        await pool.query(
+            'UPDATE contact_groups SET draft_data = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND status = $3',
+            [JSON.stringify(draftData), req.params.id, 'draft']
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[DRAFT SAVE] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ==================== FINALIZE GROUP ====================
 
 app.post('/api/finalize', auth, async (req, res) => {

@@ -1174,6 +1174,35 @@
             showAnalysisTab('rejected');
         }
 
+        // שמירת טיוטה לשרת
+        let saveDraftTimeout = null;
+        async function saveDraft() {
+            if (!state.analysisData?.groupId) return;
+            
+            try {
+                await api(`/api/draft/${state.analysisData.groupId}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        allData: state.analysisData.allData,
+                        conflicts: state.analysisData.conflicts,
+                        autoResolved: state.analysisData.autoResolved,
+                        rejectedContacts: state.analysisData.rejectedContacts,
+                        stats: state.analysisData.stats
+                    })
+                });
+                console.log('[DRAFT] Saved to server');
+            } catch (err) {
+                console.error('[DRAFT] Save error:', err);
+            }
+        }
+        
+        // שמירה מושהית (debounced)
+        function scheduleDraftSave() {
+            if (saveDraftTimeout) clearTimeout(saveDraftTimeout);
+            saveDraftTimeout = setTimeout(saveDraft, 1000); // שמור אחרי שנייה של חוסר פעילות
+        }
+
         async function updateAnalysisName(index, newName) {
             if (!state.analysisData?.allData?.[index]) return;
             
@@ -1213,7 +1242,8 @@
                                 text: `"${baseName}" נוסף לרשימה שחורה`
                             });
                             
-                            // רענן את הטאב
+                            // שמור ורענן
+                            scheduleDraftSave();
                             showAnalysisTab('accepted');
                             return;
                         } catch (err) {
@@ -1233,6 +1263,9 @@
                 contact.name = newName.trim();
                 Toast.fire({ icon: 'success', title: 'השם עודכן' });
             }
+            
+            // שמור את הטיוטה
+            scheduleDraftSave();
         }
 
         async function clearAnalysisName(index) {
@@ -1428,6 +1461,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, name })
             });
+            
+            // שמור את הטיוטה
+            scheduleDraftSave();
             
             // רינדור מחדש של הקונפליקטים
             showAnalysisTab('conflicts');
