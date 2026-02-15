@@ -777,6 +777,8 @@ app.post('/api/draft/:id/save', auth, async (req, res) => {
 app.post('/api/finalize', auth, async (req, res) => {
     const { groupId, groupName, contacts, fileIds, stats } = req.body;
     
+    console.log(`[FINALIZE] Starting: groupId=${groupId}, contacts=${contacts?.length}, groupName=${groupName}`);
+    
     try {
         const resolutions = await pool.query('SELECT phone, resolved_name FROM import_resolutions');
         const resMap = new Map(resolutions.rows.map(r => [r.phone, r.resolved_name]));
@@ -859,6 +861,7 @@ app.post('/api/finalize', auth, async (req, res) => {
         }
         
         await pool.query("TRUNCATE TABLE import_resolutions");
+        console.log(`[FINALIZE] Complete: ${finalContacts.length} contacts saved to group ${groupId}`);
         res.json({ success: true, contactsCount: finalContacts.length });
     } catch (err) {
         console.error('[FINALIZE] Error:', err);

@@ -1083,7 +1083,58 @@
             const defaultName = document.getElementById('defaultName').value;
             const startSerial = document.getElementById('startSerial').value;
             
-            Swal.fire({ title: 'מעבד קבצים...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            const fileNames = state.selectedFiles.map(id => {
+                const f = state.files.find(f => f.id === id);
+                return f?.original_name || `קובץ ${id}`;
+            });
+            
+            let progressHtml = `
+                <div class="text-right" dir="rtl">
+                    <p class="mb-4 text-slate-600">מעבד ${fileNames.length} קבצים...</p>
+                    <div class="space-y-2 mb-4">
+                        ${fileNames.map((name, i) => `
+                            <div class="flex items-center gap-2" id="file-progress-${i}">
+                                <span class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs" id="file-icon-${i}">⏳</span>
+                                <span class="text-sm truncate flex-1">${name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div id="process-progress-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-2" id="process-status">מתחיל עיבוד...</p>
+                </div>
+            `;
+            
+            Swal.fire({ 
+                title: 'מעבד קבצים', 
+                html: progressHtml,
+                allowOutsideClick: false, 
+                showConfirmButton: false
+            });
+            
+            // סימולציית התקדמות
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress = Math.min(progress + Math.random() * 15, 90);
+                const bar = document.getElementById('process-progress-bar');
+                const status = document.getElementById('process-status');
+                if (bar) bar.style.width = `${progress}%`;
+                if (status) {
+                    const steps = ['קורא קבצים...', 'מנתח אנשי קשר...', 'מזהה כפילויות...', 'מחיל כללי ניקוי...', 'מסיים עיבוד...'];
+                    status.textContent = steps[Math.min(Math.floor(progress / 20), steps.length - 1)];
+                }
+                
+                // עדכון אייקונים
+                const filesDone = Math.floor((progress / 100) * fileNames.length);
+                for (let i = 0; i < fileNames.length; i++) {
+                    const icon = document.getElementById(`file-icon-${i}`);
+                    if (icon) {
+                        if (i < filesDone) icon.textContent = '✅';
+                        else if (i === filesDone) icon.textContent = '⏳';
+                    }
+                }
+            }, 300);
             
             try {
                 const processingData = state.selectedFiles.map(id => ({
@@ -1097,17 +1148,58 @@
                     body: JSON.stringify({ processingData, targetGroupName, defaultName, startSerial })
                 });
                 
+                clearInterval(progressInterval);
+                
+                // השלם את הפרוגרס
+                const bar = document.getElementById('process-progress-bar');
+                const status = document.getElementById('process-status');
+                if (bar) bar.style.width = '100%';
+                if (status) status.textContent = 'הושלם!';
+                fileNames.forEach((_, i) => {
+                    const icon = document.getElementById(`file-icon-${i}`);
+                    if (icon) icon.textContent = '✅';
+                });
+                
+                await new Promise(r => setTimeout(r, 500));
                 Swal.close();
                 state.analysisData = result;
                 showAnalysis(result);
                 
             } catch (err) {
+                clearInterval(progressInterval);
                 Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
             }
         }
 
         async function resumeDraft(groupId) {
-            Swal.fire({ title: 'טוען טיוטה...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            let progressHtml = `
+                <div class="text-right" dir="rtl">
+                    <p class="mb-4 text-slate-600">טוען טיוטה ומחיל כללים...</p>
+                    <div class="h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div id="draft-progress-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-2" id="draft-status">טוען נתונים...</p>
+                </div>
+            `;
+            
+            Swal.fire({ 
+                title: 'טוען טיוטה', 
+                html: progressHtml,
+                allowOutsideClick: false, 
+                showConfirmButton: false
+            });
+            
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress = Math.min(progress + Math.random() * 10, 90);
+                const bar = document.getElementById('draft-progress-bar');
+                const status = document.getElementById('draft-status');
+                if (bar) bar.style.width = `${progress}%`;
+                if (status) {
+                    const steps = ['טוען נתונים...', 'מחיל כללי ניקוי...', 'מעדכן שמות...', 'בודק כפילויות...', 'מסיים...'];
+                    status.textContent = steps[Math.min(Math.floor(progress / 20), steps.length - 1)];
+                }
+            }, 200);
             
             try {
                 const result = await api('/api/analyze', {
@@ -1116,10 +1208,20 @@
                     body: JSON.stringify({ groupId })
                 });
                 
+                clearInterval(progressInterval);
+                
+                // השלם את הפרוגרס
+                const bar = document.getElementById('draft-progress-bar');
+                const status = document.getElementById('draft-status');
+                if (bar) bar.style.width = '100%';
+                if (status) status.textContent = 'הושלם!';
+                
+                await new Promise(r => setTimeout(r, 400));
                 Swal.close();
                 state.analysisData = result;
                 showAnalysis(result);
             } catch (err) {
+                clearInterval(progressInterval);
                 Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
             }
         }
@@ -1131,24 +1233,30 @@
             document.getElementById('analysisSummary').textContent = `${stats.totalParsed?.toLocaleString() || 0} נקראו מ-${stats.byFile?.length || 0} קבצים`;
             
             // Stats cards
+            const conflictCount = data.conflicts?.length || 0;
+            const approvedCount = data.allData?.length || 0;
+            const approvedWithoutConflict = approvedCount - conflictCount;
+            
             document.getElementById('analysisStats').innerHTML = `
                 <div class="bg-slate-100 rounded-xl p-4 text-center">
                     <p class="text-2xl font-black text-slate-700">${(stats.totalParsed || 0).toLocaleString()}</p>
                     <p class="text-sm text-slate-500">נקראו</p>
                 </div>
-                <div class="bg-green-100 rounded-xl p-4 text-center">
-                    <p class="text-2xl font-black text-green-600">${(data.allData?.length || 0).toLocaleString()}</p>
-                    <p class="text-sm text-slate-500">אושרו</p>
+                <div class="bg-green-100 rounded-xl p-4 text-center cursor-help" title="כל אנשי הקשר הייחודיים - כולל קונפליקטים שנפתרו">
+                    <p class="text-2xl font-black text-green-600">${approvedCount.toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">סה"כ אנשי קשר</p>
+                    <p class="text-xs text-green-500 mt-1">${approvedWithoutConflict.toLocaleString()} ללא קונפליקט</p>
                 </div>
                 <div class="bg-red-100 rounded-xl p-4 text-center">
                     <p class="text-2xl font-black text-red-600">${(data.rejectedContacts?.length || 0).toLocaleString()}</p>
                     <p class="text-sm text-slate-500">נדחו</p>
                 </div>
-                <div class="bg-amber-100 rounded-xl p-4 text-center">
-                    <p class="text-2xl font-black text-amber-600">${(data.conflicts?.length || 0).toLocaleString()}</p>
+                <div class="bg-amber-100 rounded-xl p-4 text-center cursor-help" title="אנשי קשר עם כמה שמות - נבחר שם אוטומטי">
+                    <p class="text-2xl font-black text-amber-600">${conflictCount.toLocaleString()}</p>
                     <p class="text-sm text-slate-500">קונפליקטים</p>
+                    <p class="text-xs text-amber-500 mt-1">כלולים בסה"כ</p>
                 </div>
-                <div class="bg-blue-100 rounded-xl p-4 text-center">
+                <div class="bg-blue-100 rounded-xl p-4 text-center cursor-help" title="אותו טלפון עם שם דומה - נבחר הטוב יותר">
                     <p class="text-2xl font-black text-blue-600">${(data.autoResolved?.length || 0).toLocaleString()}</p>
                     <p class="text-sm text-slate-500">כפילויות</p>
                 </div>
