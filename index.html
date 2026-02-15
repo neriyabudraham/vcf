@@ -2,413 +2,988 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>VCF Manager Pro | Elite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VCF Manager Pro | מערכת ניהול אנשי קשר</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Assistant', sans-serif; background: #f8fafc; color: #1e293b; }
-        .luxury-card { background: white; border-radius: 2.5rem; border: 1px solid #f1f5f9; box-shadow: 0 10px 40px -10px rgba(0,0,0,0.04); transition: 0.3s; position: relative; }
-        .draft-card { background: #fffcf0; border: 2px dashed #f59e0b; }
-        .card-mapped { border: 2.5px solid #10b981 !important; background: #f0fdf4; }
-        .mapped-badge { position: absolute; top: -12px; left: 24px; background: #10b981; color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2); }
-        .draft-badge { background: #f59e0b; color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.7rem; font-weight: 900; }
+        * { font-family: 'Heebo', sans-serif; }
+        body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); min-height: 100vh; }
         
-        .btn-choice { 
-            background: white; border: 2px solid #f1f5f9; padding: 12px 24px; border-radius: 1.2rem; 
-            font-weight: 800; transition: 0.3s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+        .glass-card { 
+            background: rgba(255,255,255,0.95); 
+            backdrop-filter: blur(20px); 
+            border: 1px solid rgba(255,255,255,0.8);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
         }
-        .btn-choice:hover { border-color: #6366f1; transform: translateY(-2px); }
         
-        /* ברירת מחדל אפרורית */
-        .btn-auto-selected { background: #94a3b8 !important; color: white !important; border-color: #64748b !important; }
+        .stat-card {
+            background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .stat-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
         
-        /* בחירה ידנית כחולה */
-        .btn-manual-selected { background: #4f46e5 !important; color: white !important; border-color: #4338ca !important; }
-
-        .btn-process {
+        .btn-primary {
             background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-            color: white; padding: 1.25rem 3rem; border-radius: 1.5rem;
-            font-weight: 900; font-size: 1.25rem; box-shadow: 0 20px 40px -15px rgba(79, 70, 229, 0.4);
-            transition: 0.4s;
+            color: white;
+            transition: all 0.3s ease;
         }
-        .btn-process:hover { transform: translateY(-4px); box-shadow: 0 25px 50px -12px rgba(79, 70, 229, 0.5); }
-
-        .progress-bar { width: 0%; height: 8px; background: #4f46e5; border-radius: 10px; transition: 0.3s; }
-        .swal2-popup { border-radius: 3rem !important; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4); }
+        
+        .btn-success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+        .btn-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
+        .btn-warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+        
+        .file-card { transition: all 0.3s ease; }
+        .file-card:hover { transform: scale(1.02); }
+        .file-card.selected { ring: 3px solid #6366f1; background: #eef2ff; }
+        
+        .tab-btn { transition: all 0.2s; }
+        .tab-btn.active { background: #6366f1; color: white; }
+        
+        .table-row:hover { background: #f8fafc; }
+        
+        .progress-ring { transition: stroke-dashoffset 0.5s ease; }
+        
+        .fade-in { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
-<body class="min-h-screen text-right">
-    <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b px-12 py-6 flex justify-between items-center shadow-sm">
-        <div class="flex items-center gap-4">
-            <div class="bg-indigo-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl">V</div>
-            <h1 class="text-xl font-black italic">BOTOMAT <span class="text-indigo-600">PRO</span></h1>
-        </div>
-        <div class="flex gap-8">
-            <button onclick="showView('dashboard')" class="font-bold text-slate-500 hover:text-indigo-600">רשימות</button>
-            <button onclick="showView('archive')" class="font-bold text-slate-500 hover:text-indigo-600">ארכיון</button>
-            <button onclick="document.getElementById('fileFiles').click()" class="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-100">ייבוא חדש</button>
-        </div>
-        <input type="file" id="fileFiles" multiple class="hidden" onchange="handleUpload(event)">
-    </nav>
-
-    <div id="uploadOverlay" class="hidden fixed bottom-10 left-10 z-[200] bg-white p-8 rounded-[3rem] shadow-2xl border w-[28rem] animate-in slide-in-from-left">
-        <h4 class="font-black text-indigo-900 mb-4">מעלה קבצים...</h4>
-        <div id="uploadFilesList" class="space-y-3 max-h-60 overflow-y-auto mb-4"></div>
-        <div class="border-t pt-3">
-            <div class="flex justify-between text-xs text-slate-500 mb-1">
-                <span id="uploadTotalText">סה"כ: 0/0 קבצים</span>
-                <span id="uploadTotalPercent">0%</span>
+<body class="text-slate-800">
+    <!-- Header -->
+    <header class="glass-card sticky top-0 z-50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">V</div>
+                <div>
+                    <h1 class="text-xl font-black text-slate-800">VCF Manager <span class="text-indigo-600">Pro</span></h1>
+                    <p class="text-xs text-slate-400">מערכת ניהול אנשי קשר מתקדמת</p>
+                </div>
             </div>
-            <div class="bg-slate-100 rounded-full h-2 overflow-hidden"><div id="globalProgress" class="progress-bar"></div></div>
+            <nav class="flex items-center gap-2">
+                <button onclick="showView('dashboard')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="dashboard">דשבורד</button>
+                <button onclick="showView('groups')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="groups">רשימות</button>
+                <button onclick="showView('files')" class="tab-btn px-4 py-2 rounded-xl font-semibold text-slate-600 hover:bg-slate-100" data-view="files">קבצים</button>
+                <button onclick="document.getElementById('fileInput').click()" class="btn-primary px-6 py-2.5 rounded-xl font-bold shadow-lg">
+                    <span class="flex items-center gap-2">📁 העלאת קבצים</span>
+                </button>
+                <input type="file" id="fileInput" multiple accept=".vcf,.csv" class="hidden" onchange="handleUpload(event)">
+            </nav>
+        </div>
+    </header>
+
+    <!-- Upload Overlay -->
+    <div id="uploadOverlay" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div class="glass-card rounded-3xl p-8 w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <h3 class="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3">
+                <span class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">📤</span>
+                מעלה קבצים...
+            </h3>
+            <div id="uploadFilesList" class="space-y-3 mb-6"></div>
+            <div class="bg-slate-100 rounded-2xl p-4">
+                <div class="flex justify-between text-sm font-semibold text-slate-600 mb-2">
+                    <span id="uploadTotalText">0 / 0 קבצים</span>
+                    <span id="uploadTotalPercent">0%</span>
+                </div>
+                <div class="h-3 bg-slate-200 rounded-full overflow-hidden">
+                    <div id="globalProgress" class="h-full bg-indigo-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto p-12 text-right">
-        <section id="dashboard-view" class="space-y-10 animate-in fade-in">
-            <h2 class="text-4xl font-black text-slate-800 tracking-tight">רשימות וטיוטות</h2>
-            <div id="groups-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"></div>
-        </section>
-
-        <section id="archive-view" class="hidden space-y-12 text-right">
-            <div class="bg-slate-900 rounded-[3.5rem] p-12 text-white flex flex-col xl:flex-row items-center justify-between gap-10 shadow-3xl">
-                <div class="flex-1 space-y-4">
-                    <h2 class="text-3xl font-black italic text-indigo-400">המכבסה והארכיון</h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <input type="text" id="defaultName" placeholder="שם דיפולטיבי (לזיהוי 'זבל')..." class="bg-white/10 p-5 rounded-2xl text-white outline-none border border-white/20">
-                        <input type="number" id="startSerial" placeholder="מספר רץ מ..." value="1" class="bg-white/10 p-5 rounded-2xl text-white outline-none border border-white/20">
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-6 space-y-6">
+        
+        <!-- Dashboard View -->
+        <section id="dashboard-view" class="space-y-6 fade-in">
+            <div class="flex justify-between items-center">
+                <h2 class="text-3xl font-black text-slate-800">דשבורד</h2>
+                <button onclick="loadDashboard()" class="text-indigo-600 font-semibold hover:underline">🔄 רענן</button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="statsCards">
+                <div class="stat-card rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-4xl">📋</span>
+                        <span class="text-3xl font-black text-indigo-600" id="stat-groups">0</span>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-indigo-300 mb-2 uppercase italic tracking-widest">מילות התעלמות (הפרד בפסיק):</label>
-                        <input type="text" id="ignoreKeywords" placeholder="לדוגמא: מספר נוסף, זמני, אחר" class="w-full bg-white/10 p-4 rounded-xl text-white outline-none border border-white/20">
-                    </div>
+                    <p class="text-slate-600 font-semibold">רשימות פעילות</p>
                 </div>
-                <div class="flex flex-col gap-4">
-                    <input type="text" id="targetGroupName" placeholder="שם הקבוצה..." class="bg-white/20 p-6 rounded-[2rem] w-80 text-white outline-none border border-white/30 focus:bg-white/40">
-                    <button onclick="startAnalysis()" class="btn-process">עבד נבחרים ⚡</button>
+                <div class="stat-card rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-4xl">👥</span>
+                        <span class="text-3xl font-black text-green-600" id="stat-contacts">0</span>
+                    </div>
+                    <p class="text-slate-600 font-semibold">אנשי קשר</p>
+                </div>
+                <div class="stat-card rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-4xl">📁</span>
+                        <span class="text-3xl font-black text-amber-600" id="stat-files">0</span>
+                    </div>
+                    <p class="text-slate-600 font-semibold">קבצים ממתינים</p>
+                </div>
+                <div class="stat-card rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-4xl">✏️</span>
+                        <span class="text-3xl font-black text-purple-600" id="stat-drafts">0</span>
+                    </div>
+                    <p class="text-slate-600 font-semibold">טיוטות</p>
                 </div>
             </div>
-            <div id="file-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"></div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass-card rounded-2xl p-6">
+                    <h3 class="text-xl font-bold text-slate-800 mb-4">רשימות אחרונות</h3>
+                    <div id="recentGroups" class="space-y-3"></div>
+                </div>
+                <div class="glass-card rounded-2xl p-6">
+                    <h3 class="text-xl font-bold text-slate-800 mb-4">קבצים ממתינים</h3>
+                    <div id="pendingFiles" class="space-y-3"></div>
+                </div>
+            </div>
         </section>
 
-        <section id="resolution-view" class="hidden space-y-10">
-            <div class="bg-white p-10 rounded-[3rem] shadow-xl border flex justify-between items-center text-right">
+        <!-- Groups View -->
+        <section id="groups-view" class="hidden space-y-6 fade-in">
+            <div class="flex justify-between items-center">
+                <h2 class="text-3xl font-black text-slate-800">רשימות אנשי קשר</h2>
+            </div>
+            <div id="groupsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </section>
+
+        <!-- Files View -->
+        <section id="files-view" class="hidden space-y-6 fade-in">
+            <div class="flex justify-between items-center">
+                <h2 class="text-3xl font-black text-slate-800">קבצים להעלאה</h2>
+                <button onclick="startProcessing()" id="processBtn" class="btn-primary px-6 py-3 rounded-xl font-bold shadow-lg hidden">
+                    ⚡ עבד קבצים נבחרים (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+            
+            <div class="glass-card rounded-2xl p-6">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <input type="text" id="targetGroupName" placeholder="שם הרשימה החדשה..." class="col-span-2 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <input type="text" id="defaultName" placeholder="שם ברירת מחדל לאיש קשר..." class="px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <input type="number" id="startSerial" value="1" placeholder="מספר התחלתי" class="px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+            </div>
+            
+            <div id="filesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </section>
+
+        <!-- Analysis View -->
+        <section id="analysis-view" class="hidden space-y-6 fade-in">
+            <div class="flex justify-between items-center">
                 <div>
-                    <h2 id="currentImportName" class="text-3xl font-black text-indigo-600 mb-1"></h2>
-                    <p id="conflictSummary" class="text-slate-400 font-bold italic"></p>
+                    <h2 class="text-3xl font-black text-slate-800" id="analysisTitle">ניתוח נתונים</h2>
+                    <p class="text-slate-500" id="analysisSummary"></p>
                 </div>
-                <button onclick="finalizeProcessUI()" class="bg-indigo-600 text-white px-12 py-4 rounded-2xl font-black text-xl shadow-lg">שמור הכל וסיים ✅</button>
+                <button onclick="finalizeGroup()" class="btn-success px-8 py-3 rounded-xl font-bold shadow-lg">
+                    ✅ שמור וסיים
+                </button>
             </div>
-            <div class="bg-white rounded-[2.5rem] shadow-xl border overflow-hidden"><table class="w-full text-right"><thead class="bg-slate-50 border-b"><tr><th class="p-8 font-black uppercase text-slate-400 italic">טלפון</th><th class="p-8 font-black uppercase text-slate-400 italic text-right">בחר שם לשמירה</th></tr></thead><tbody id="resolution-body"></tbody></table></div>
-            <div class="mt-20 space-y-6"><h3 class="text-xl font-black text-green-600 italic text-right">איחודים אוטומטיים (שמות דומים שמוזגו)</h3><div id="auto-resolve-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div></div>
+            
+            <!-- Stats Summary -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4" id="analysisStats"></div>
+            
+            <!-- Tabs -->
+            <div class="glass-card rounded-2xl overflow-hidden">
+                <div class="flex border-b border-slate-200">
+                    <button onclick="showAnalysisTab('accepted')" class="analysis-tab flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="accepted">
+                        ✅ אושרו (<span id="acceptedCount">0</span>)
+                    </button>
+                    <button onclick="showAnalysisTab('rejected')" class="analysis-tab flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="rejected">
+                        ❌ נדחו (<span id="rejectedCount">0</span>)
+                    </button>
+                    <button onclick="showAnalysisTab('conflicts')" class="analysis-tab flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="conflicts">
+                        ⚠️ קונפליקטים (<span id="conflictsCount">0</span>)
+                    </button>
+                    <button onclick="showAnalysisTab('duplicates')" class="analysis-tab flex-1 px-6 py-4 font-semibold text-slate-600 hover:bg-slate-50 border-b-2 border-transparent" data-tab="duplicates">
+                        🔄 כפילויות (<span id="duplicatesCount">0</span>)
+                    </button>
+                </div>
+                
+                <div id="analysisContent" class="p-6 max-h-[60vh] overflow-auto"></div>
+            </div>
         </section>
 
-        <section id="contacts-view" class="hidden space-y-10">
-            <div class="flex justify-between items-center bg-white p-10 rounded-[2.5rem] shadow-sm border text-right">
-                <div><h2 id="currentGroupName" class="text-3xl font-black text-indigo-600 mb-1"></h2><p id="currentCount" class="text-slate-400 font-bold italic"></p></div>
-                <div class="flex gap-4"><button onclick="exportData('csv')" class="bg-slate-100 px-6 py-3 rounded-xl font-bold">CSV</button><button onclick="exportData('vcf')" class="bg-slate-100 px-6 py-3 rounded-xl font-bold">VCF</button><button onclick="showView('dashboard')" class="bg-indigo-50 text-indigo-600 px-8 py-3 rounded-xl font-bold">חזור</button></div>
+        <!-- Group Detail View -->
+        <section id="group-view" class="hidden space-y-6 fade-in">
+            <div class="flex justify-between items-center">
+                <div>
+                    <button onclick="showView('groups')" class="text-indigo-600 font-semibold mb-2 hover:underline">← חזרה לרשימות</button>
+                    <h2 class="text-3xl font-black text-slate-800" id="groupTitle"></h2>
+                    <p class="text-slate-500" id="groupInfo"></p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="addFilesToGroup()" class="btn-primary px-4 py-2 rounded-xl font-semibold">➕ הוסף קבצים</button>
+                    <button onclick="saveVersion()" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">💾 שמור גרסה</button>
+                    <button onclick="exportGroup('csv')" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">📊 CSV</button>
+                    <button onclick="exportGroup('vcf')" class="px-4 py-2 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">📇 VCF</button>
+                </div>
             </div>
-            <div class="bg-white rounded-[2.5rem] shadow-xl border overflow-hidden"><table class="w-full text-right" id="contactsTable"><thead class="bg-slate-50 border-b"><tr><th class="p-8 text-right">שם מלא</th><th class="p-8 text-left">טלפון</th></tr></thead><tbody id="contacts-body"></tbody></table></div>
+            
+            <!-- Versions -->
+            <div class="glass-card rounded-2xl p-4">
+                <div class="flex items-center gap-4 overflow-x-auto pb-2">
+                    <span class="text-slate-500 font-semibold whitespace-nowrap">גרסאות:</span>
+                    <div id="versionsList" class="flex gap-2"></div>
+                </div>
+            </div>
+            
+            <!-- Search & Contacts -->
+            <div class="glass-card rounded-2xl p-6">
+                <div class="flex gap-4 mb-6">
+                    <input type="text" id="contactSearch" placeholder="🔍 חיפוש לפי שם או טלפון..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none" oninput="searchContacts()">
+                </div>
+                <div id="contactsTable" class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-slate-50 text-slate-600">
+                            <tr>
+                                <th class="px-4 py-3 text-right font-semibold rounded-tr-xl">שם</th>
+                                <th class="px-4 py-3 text-right font-semibold">טלפון</th>
+                                <th class="px-4 py-3 text-right font-semibold">אימייל</th>
+                                <th class="px-4 py-3 text-right font-semibold rounded-tl-xl">מקור</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contactsBody"></tbody>
+                    </table>
+                </div>
+                <div id="pagination" class="flex justify-center gap-2 mt-4"></div>
+            </div>
         </section>
+
     </main>
 
-    <div id="mappingModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-8 text-right">
-        <div class="bg-white w-full max-w-5xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
-            <div class="p-10 border-b flex justify-between items-center bg-slate-50"><h3 id="mappingTitle" class="text-2xl font-black italic text-indigo-900">מיפוי נתונים</h3><button onclick="closeMapping()" class="text-4xl text-slate-300 hover:text-red-500">&times;</button></div>
-            <div id="mappingContent" class="p-10 overflow-auto flex-1 space-y-10"></div>
-            <div class="p-10 border-t bg-slate-50 flex justify-end"><button onclick="saveAndMark()" class="bg-indigo-600 text-white px-12 py-4 rounded-2xl font-black shadow-xl">שמור וצרף ✅</button></div>
+    <!-- Mapping Modal -->
+    <div id="mappingModal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div class="glass-card rounded-3xl p-8 w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-black text-slate-800" id="mappingTitle">הגדרת מיפוי</h3>
+                <button onclick="closeMapping()" class="text-3xl text-slate-400 hover:text-slate-600">&times;</button>
+            </div>
+            <div id="mappingContent"></div>
+            <div class="flex justify-end gap-3 mt-6 pt-6 border-t">
+                <button onclick="closeMapping()" class="px-6 py-3 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">ביטול</button>
+                <button onclick="saveMapping()" class="btn-primary px-6 py-3 rounded-xl font-bold">שמור מיפוי</button>
+            </div>
         </div>
     </div>
 
     <script>
-        let archive = [], selected = [], mappings = {}, fileSamples = {}, currentFileId = null, currentGroupId = null, analysisData = null;
-        const resolvedMap = new Map();
-        const manualResolved = new Set();
-        const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+        // ==================== STATE ====================
+        let state = {
+            files: [],
+            groups: [],
+            selectedFiles: [],
+            mappings: {},
+            fileSamples: {},
+            currentGroupId: null,
+            analysisData: null,
+            currentPage: 1
+        };
+        
+        const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
 
+        // ==================== VIEWS ====================
+        function showView(view) {
+            document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(view + '-view').classList.remove('hidden');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.tab-btn[data-view="${view}"]`)?.classList.add('active');
+            
+            if (view === 'dashboard') loadDashboard();
+            else if (view === 'groups') loadGroups();
+            else if (view === 'files') loadFiles();
+        }
+
+        // ==================== DASHBOARD ====================
+        async function loadDashboard() {
+            try {
+                const [stats, groups, files] = await Promise.all([
+                    fetch('/api/dashboard-stats').then(r => r.json()),
+                    fetch('/api/groups').then(r => r.json()),
+                    fetch('/api/files').then(r => r.json())
+                ]);
+                
+                document.getElementById('stat-groups').textContent = stats.groups?.ready || 0;
+                document.getElementById('stat-contacts').textContent = Number(stats.contacts?.total || 0).toLocaleString();
+                document.getElementById('stat-files').textContent = stats.files?.pending || 0;
+                document.getElementById('stat-drafts').textContent = stats.groups?.draft || 0;
+                
+                // Recent groups
+                document.getElementById('recentGroups').innerHTML = groups.slice(0, 5).map(g => `
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100" onclick="viewGroup(${g.id})">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${g.status === 'draft' ? '📝' : '📋'}</span>
+                            <div>
+                                <p class="font-semibold text-slate-800">${g.name}</p>
+                                <p class="text-xs text-slate-500">${g.count || 0} אנשי קשר</p>
+                            </div>
+                        </div>
+                        ${g.status === 'draft' ? '<span class="px-2 py-1 bg-amber-100 text-amber-700 text-xs rounded-lg font-semibold">טיוטה</span>' : ''}
+                    </div>
+                `).join('') || '<p class="text-slate-400 text-center py-4">אין רשימות עדיין</p>';
+                
+                // Pending files
+                document.getElementById('pendingFiles').innerHTML = files.slice(0, 5).map(f => `
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">📄</span>
+                            <div>
+                                <p class="font-semibold text-slate-800 truncate max-w-[200px]">${f.original_name}</p>
+                                <p class="text-xs text-slate-500">${f.parsed_count || 0} נקראו • ${f.valid_count || 0} תקינים</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('') || '<p class="text-slate-400 text-center py-4">אין קבצים ממתינים</p>';
+                
+            } catch (err) {
+                console.error('Dashboard error:', err);
+            }
+        }
+
+        // ==================== GROUPS ====================
+        async function loadGroups() {
+            try {
+                const groups = await fetch('/api/groups').then(r => r.json());
+                state.groups = groups;
+                
+                document.getElementById('groupsList').innerHTML = groups.map(g => `
+                    <div class="glass-card rounded-2xl p-6 cursor-pointer file-card ${g.status === 'draft' ? 'border-2 border-dashed border-amber-400' : ''}" 
+                         onclick="${g.status === 'draft' ? `resumeDraft(${g.id})` : `viewGroup(${g.id})`}">
+                        <div class="flex justify-between items-start mb-4">
+                            <span class="text-4xl">${g.status === 'draft' ? '📝' : '📋'}</span>
+                            ${g.status === 'draft' ? '<span class="px-3 py-1 bg-amber-100 text-amber-700 text-sm rounded-lg font-semibold pulse-dot">טיוטה</span>' : ''}
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-800 mb-2">${g.name}</h3>
+                        <p class="text-3xl font-black text-indigo-600 mb-1">${(g.count || 0).toLocaleString()}</p>
+                        <p class="text-slate-500 text-sm">אנשי קשר</p>
+                        <div class="flex justify-between items-center mt-4 pt-4 border-t border-slate-100">
+                            <span class="text-xs text-slate-400">${g.updated_at_formatted || g.created_at_formatted || ''}</span>
+                            <button onclick="event.stopPropagation(); deleteGroup(${g.id})" class="text-red-400 hover:text-red-600 text-sm">🗑️</button>
+                        </div>
+                    </div>
+                `).join('') || '<p class="text-slate-400 text-center py-8 col-span-3">אין רשימות עדיין. העלה קבצים כדי להתחיל.</p>';
+                
+            } catch (err) {
+                console.error('Groups error:', err);
+            }
+        }
+
+        async function viewGroup(id) {
+            try {
+                state.currentGroupId = id;
+                state.currentPage = 1;
+                
+                const [group, versions] = await Promise.all([
+                    fetch(`/api/groups/${id}`).then(r => r.json()),
+                    fetch(`/api/groups/${id}/versions`).then(r => r.json())
+                ]);
+                
+                document.getElementById('groupTitle').textContent = group.name;
+                document.getElementById('groupInfo').textContent = `${group.contacts?.length || 0} אנשי קשר • גרסה ${group.version || 1}`;
+                
+                // Versions
+                document.getElementById('versionsList').innerHTML = versions.map(v => `
+                    <button onclick="restoreVersion(${v.id})" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium whitespace-nowrap">
+                        v${v.version_number} - ${v.version_name || ''} (${v.contacts_count || 0})
+                    </button>
+                `).join('') || '<span class="text-slate-400 text-sm">אין גרסאות קודמות</span>';
+                
+                loadContacts();
+                showView('group');
+            } catch (err) {
+                console.error('View group error:', err);
+                Toast.fire({ icon: 'error', title: 'שגיאה בטעינת הרשימה' });
+            }
+        }
+
+        async function loadContacts() {
+            const search = document.getElementById('contactSearch')?.value || '';
+            try {
+                const data = await fetch(`/api/groups/${state.currentGroupId}/contacts?search=${encodeURIComponent(search)}&page=${state.currentPage}&limit=50`).then(r => r.json());
+                
+                document.getElementById('contactsBody').innerHTML = data.contacts.map(c => `
+                    <tr class="table-row border-b border-slate-100">
+                        <td class="px-4 py-3 font-medium">${c.full_name}</td>
+                        <td class="px-4 py-3 text-slate-600 font-mono">${c.phone}</td>
+                        <td class="px-4 py-3 text-slate-500">${c.email || '-'}</td>
+                        <td class="px-4 py-3 text-slate-400 text-sm">${c.source_file_name || '-'}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="4" class="text-center py-8 text-slate-400">לא נמצאו אנשי קשר</td></tr>';
+                
+                // Pagination
+                const totalPages = Math.ceil(data.total / data.limit);
+                let paginationHtml = '';
+                for (let i = 1; i <= totalPages && i <= 10; i++) {
+                    paginationHtml += `<button onclick="goToPage(${i})" class="px-3 py-1 rounded-lg ${i === state.currentPage ? 'bg-indigo-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}">${i}</button>`;
+                }
+                document.getElementById('pagination').innerHTML = paginationHtml;
+                
+            } catch (err) {
+                console.error('Load contacts error:', err);
+            }
+        }
+
+        function goToPage(page) {
+            state.currentPage = page;
+            loadContacts();
+        }
+
+        function searchContacts() {
+            state.currentPage = 1;
+            loadContacts();
+        }
+
+        async function deleteGroup(id) {
+            const result = await Swal.fire({ title: 'למחוק את הרשימה?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'מחק', cancelButtonText: 'ביטול' });
+            if (result.isConfirmed) {
+                await fetch(`/api/groups/${id}`, { method: 'DELETE' });
+                loadGroups();
+                Toast.fire({ icon: 'success', title: 'הרשימה נמחקה' });
+            }
+        }
+
+        async function saveVersion() {
+            const { value: name } = await Swal.fire({ title: 'שמירת גרסה', input: 'text', inputPlaceholder: 'שם הגרסה...', showCancelButton: true });
+            if (name) {
+                await fetch(`/api/groups/${state.currentGroupId}/save-version`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ versionName: name })
+                });
+                Toast.fire({ icon: 'success', title: 'הגרסה נשמרה' });
+                viewGroup(state.currentGroupId);
+            }
+        }
+
+        async function restoreVersion(versionId) {
+            const result = await Swal.fire({ title: 'לשחזר גרסה זו?', text: 'הפעולה תחליף את אנשי הקשר הנוכחיים', icon: 'question', showCancelButton: true });
+            if (result.isConfirmed) {
+                await fetch(`/api/groups/${state.currentGroupId}/restore-version/${versionId}`, { method: 'POST' });
+                Toast.fire({ icon: 'success', title: 'הגרסה שוחזרה' });
+                viewGroup(state.currentGroupId);
+            }
+        }
+
+        function exportGroup(type) {
+            window.location.href = `/api/export/${type}/${state.currentGroupId}`;
+        }
+
+        // ==================== FILES ====================
+        async function loadFiles() {
+            try {
+                const files = await fetch('/api/files').then(r => r.json());
+                state.files = files;
+                
+                document.getElementById('filesList').innerHTML = files.map(f => {
+                    const isSelected = state.selectedFiles.includes(f.id);
+                    return `
+                    <div class="glass-card rounded-2xl p-5 file-card cursor-pointer ${isSelected ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}" onclick="toggleFile(${f.id})">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-3xl">📄</span>
+                            <input type="checkbox" ${isSelected ? 'checked' : ''} class="w-5 h-5 accent-indigo-600" onclick="event.stopPropagation(); toggleFile(${f.id})">
+                        </div>
+                        <h4 class="font-bold text-slate-800 truncate mb-2" title="${f.original_name}">${f.original_name}</h4>
+                        <div class="grid grid-cols-3 gap-2 text-center mb-3">
+                            <div class="bg-slate-100 rounded-lg p-2">
+                                <p class="text-lg font-bold text-slate-700">${(f.parsed_count || 0).toLocaleString()}</p>
+                                <p class="text-xs text-slate-500">נקראו</p>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-green-600">${(f.valid_count || 0).toLocaleString()}</p>
+                                <p class="text-xs text-slate-500">תקינים</p>
+                            </div>
+                            <div class="bg-red-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-red-500">${(f.rejected_count || 0).toLocaleString()}</p>
+                                <p class="text-xs text-slate-500">נדחו</p>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center pt-3 border-t border-slate-100">
+                            <button onclick="event.stopPropagation(); openMapping(${f.id})" class="text-indigo-600 font-semibold text-sm hover:underline">⚙️ מיפוי</button>
+                            <button onclick="event.stopPropagation(); deleteFile(${f.id})" class="text-red-400 hover:text-red-600 text-sm">🗑️</button>
+                        </div>
+                    </div>
+                `}).join('') || '<p class="text-slate-400 text-center py-8 col-span-3">אין קבצים ממתינים. העלה קבצים חדשים.</p>';
+                
+                updateProcessButton();
+            } catch (err) {
+                console.error('Files error:', err);
+            }
+        }
+
+        function toggleFile(id) {
+            const idx = state.selectedFiles.indexOf(id);
+            if (idx > -1) state.selectedFiles.splice(idx, 1);
+            else state.selectedFiles.push(id);
+            loadFiles();
+        }
+
+        function updateProcessButton() {
+            const btn = document.getElementById('processBtn');
+            const count = state.selectedFiles.length;
+            document.getElementById('selectedCount').textContent = count;
+            btn.classList.toggle('hidden', count === 0);
+        }
+
+        async function deleteFile(id) {
+            await fetch(`/api/files/${id}`, { method: 'DELETE' });
+            state.selectedFiles = state.selectedFiles.filter(fid => fid !== id);
+            loadFiles();
+            Toast.fire({ icon: 'success', title: 'הקובץ נמחק' });
+        }
+
+        // ==================== UPLOAD ====================
         async function handleUpload(e) {
-            const files = e.target.files; if(!files.length) return;
+            const files = e.target.files;
+            if (!files.length) return;
+            
             document.getElementById('uploadOverlay').classList.remove('hidden');
             const filesList = document.getElementById('uploadFilesList');
             const globalProgress = document.getElementById('globalProgress');
             const totalText = document.getElementById('uploadTotalText');
             const totalPercent = document.getElementById('uploadTotalPercent');
             
-            // יצירת רשימת קבצים עם progress bars
             filesList.innerHTML = Array.from(files).map((f, i) => `
-                <div id="upload-item-${i}" class="bg-slate-50 rounded-xl p-3">
+                <div id="upload-${i}" class="bg-slate-50 rounded-xl p-4">
                     <div class="flex justify-between items-center mb-2">
-                        <span class="text-sm font-bold text-slate-700 truncate max-w-[200px]" title="${f.name}">${f.name}</span>
-                        <span id="upload-status-${i}" class="text-xs font-bold text-slate-400">ממתין...</span>
+                        <span class="font-semibold text-slate-700 truncate max-w-[300px]">${f.name}</span>
+                        <span id="status-${i}" class="text-sm font-medium text-slate-400">ממתין...</span>
                     </div>
-                    <div class="bg-slate-200 rounded-full h-2 overflow-hidden">
-                        <div id="upload-progress-${i}" class="h-full bg-indigo-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div id="progress-${i}" class="h-full bg-indigo-500 rounded-full transition-all" style="width: 0%"></div>
                     </div>
                     <div class="flex justify-between text-xs text-slate-400 mt-1">
-                        <span id="upload-size-${i}">${formatSize(f.size)}</span>
-                        <span id="upload-percent-${i}">0%</span>
+                        <span>${formatSize(f.size)}</span>
+                        <span id="percent-${i}">0%</span>
                     </div>
                 </div>
             `).join('');
             
-            let completedFiles = 0;
-            const totalFiles = files.length;
+            let completed = 0;
             
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                const progressBar = document.getElementById(`upload-progress-${i}`);
-                const statusEl = document.getElementById(`upload-status-${i}`);
-                const percentEl = document.getElementById(`upload-percent-${i}`);
-                const itemEl = document.getElementById(`upload-item-${i}`);
-                
-                statusEl.innerText = 'מעלה...';
-                statusEl.className = 'text-xs font-bold text-indigo-600';
-                itemEl.classList.add('ring-2', 'ring-indigo-300');
+                document.getElementById(`status-${i}`).textContent = 'מעלה...';
+                document.getElementById(`status-${i}`).className = 'text-sm font-medium text-indigo-600';
                 
                 try {
-                    const uploadedFile = await uploadFileWithProgress(file, 
-                        // onProgress - התקדמות העלאה
-                        (percent) => {
-                            progressBar.style.width = percent + '%';
-                            percentEl.innerText = percent + '%';
-                            const overallPercent = Math.round(((completedFiles + percent/100) / totalFiles) * 100);
-                            globalProgress.style.width = overallPercent + '%';
-                            totalPercent.innerText = overallPercent + '%';
-                        },
-                        // onProcessing - השרת מעבד את הקובץ
-                        () => {
-                            statusEl.innerText = '⏳ מעבד אנשי קשר...';
-                            statusEl.className = 'text-xs font-bold text-amber-600';
-                            progressBar.classList.remove('bg-indigo-500');
-                            progressBar.classList.add('bg-amber-500', 'animate-pulse');
+                    const result = await uploadFile(file, (percent) => {
+                        document.getElementById(`progress-${i}`).style.width = percent + '%';
+                        document.getElementById(`percent-${i}`).textContent = percent + '%';
+                        if (percent === 100) {
+                            document.getElementById(`status-${i}`).textContent = '⏳ מעבד...';
+                            document.getElementById(`status-${i}`).className = 'text-sm font-medium text-amber-600';
+                            document.getElementById(`progress-${i}`).classList.remove('bg-indigo-500');
+                            document.getElementById(`progress-${i}`).classList.add('bg-amber-400');
                         }
-                    );
+                    });
                     
-                    // הצלחה
-                    progressBar.classList.remove('bg-amber-500', 'animate-pulse');
-                    completedFiles++;
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('bg-indigo-500');
-                    progressBar.classList.add('bg-green-500');
-                    percentEl.innerText = '100%';
-                    statusEl.innerText = `✓ ${uploadedFile.parsedCount || 0} אנשי קשר`;
-                    statusEl.className = 'text-xs font-bold text-green-600';
-                    itemEl.classList.remove('ring-indigo-300');
-                    itemEl.classList.add('ring-green-300');
+                    // Success
+                    document.getElementById(`status-${i}`).textContent = `✅ ${result.stats?.valid?.toLocaleString() || 0} תקינים`;
+                    document.getElementById(`status-${i}`).className = 'text-sm font-medium text-green-600';
+                    document.getElementById(`progress-${i}`).classList.remove('bg-amber-400');
+                    document.getElementById(`progress-${i}`).classList.add('bg-green-500');
                     
-                    // עיבוד התוצאה
-                    let hArr = Array.isArray(uploadedFile.headers) ? uploadedFile.headers : JSON.parse(uploadedFile.headers || '[]');
-                    fileSamples[uploadedFile.id] = uploadedFile.sample;
-                    const autoP = hArr.find(h => /phone|tel|נייד|טלפון/i.test(h)) || hArr[0];
-                    const autoN = hArr.find(h => /name|fn|שם/i.test(h)) || hArr[0];
-                    mappings[uploadedFile.id] = { nameFields: [autoN], phoneField: autoP };
-                    if(hArr.length === 2 && !selected.includes(uploadedFile.id)) selected.push(uploadedFile.id);
+                    // Setup auto mapping
+                    const headers = Array.isArray(result.headers) ? result.headers : JSON.parse(result.headers || '[]');
+                    state.fileSamples[result.id] = result.sample;
+                    const phoneField = headers.find(h => /phone|tel|טלפון/i.test(h)) || headers[0];
+                    const nameField = headers.find(h => /name|שם/i.test(h)) || headers[0];
+                    state.mappings[result.id] = { phoneField, nameFields: [nameField] };
+                    if (headers.length <= 3) state.selectedFiles.push(result.id);
                     
                 } catch (err) {
-                    progressBar.classList.remove('bg-indigo-500');
-                    progressBar.classList.add('bg-red-500');
-                    statusEl.innerText = '✗ שגיאה';
-                    statusEl.className = 'text-xs font-bold text-red-600';
-                    itemEl.classList.remove('ring-indigo-300');
-                    itemEl.classList.add('ring-red-300');
-                    completedFiles++;
+                    document.getElementById(`status-${i}`).textContent = '❌ שגיאה';
+                    document.getElementById(`status-${i}`).className = 'text-sm font-medium text-red-600';
+                    document.getElementById(`progress-${i}`).classList.add('bg-red-500');
                 }
                 
-                totalText.innerText = `סה"כ: ${completedFiles}/${totalFiles} קבצים`;
-                const overallPercent = Math.round((completedFiles / totalFiles) * 100);
-                globalProgress.style.width = overallPercent + '%';
-                totalPercent.innerText = overallPercent + '%';
+                completed++;
+                totalText.textContent = `${completed} / ${files.length} קבצים`;
+                totalPercent.textContent = Math.round((completed / files.length) * 100) + '%';
+                globalProgress.style.width = (completed / files.length * 100) + '%';
             }
             
-            await loadArchive(); 
-            showView('archive');
-            
-            globalProgress.style.width = '100%';
             globalProgress.classList.add('bg-green-500');
             setTimeout(() => {
                 document.getElementById('uploadOverlay').classList.add('hidden');
                 globalProgress.classList.remove('bg-green-500');
-            }, 2000);
+                globalProgress.style.width = '0%';
+                loadFiles();
+                showView('files');
+            }, 1500);
+            
+            e.target.value = '';
         }
-        
-        function uploadFileWithProgress(file, onProgress, onProcessing) {
+
+        function uploadFile(file, onProgress) {
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 const fd = new FormData();
                 fd.append('file', file);
                 
                 xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        onProgress(percent);
-                    }
-                });
-                
-                // כשההעלאה מסתיימת, השרת מתחיל לעבד
-                xhr.upload.addEventListener('load', () => {
-                    onProcessing();
+                    if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
                 });
                 
                 xhr.addEventListener('load', () => {
                     if (xhr.status >= 200 && xhr.status < 300) {
-                        try {
-                            resolve(JSON.parse(xhr.responseText));
-                        } catch (e) {
-                            reject(new Error('Invalid response'));
-                        }
+                        resolve(JSON.parse(xhr.responseText));
                     } else {
-                        reject(new Error(`Upload failed: ${xhr.status}`));
+                        reject(new Error('Upload failed'));
                     }
                 });
                 
                 xhr.addEventListener('error', () => reject(new Error('Network error')));
-                xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
-                
                 xhr.open('POST', '/api/upload');
                 xhr.send(fd);
             });
         }
-        
+
         function formatSize(bytes) {
             if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
-        async function loadArchive() {
-            const res = await fetch('/api/files'); archive = await res.json();
-            document.getElementById('file-list').innerHTML = archive.map(f => {
-                const isMapped = mappings[f.id] && mappings[f.id].nameFields.length > 0;
-                return `
-                <div class="luxury-card p-10 flex flex-col justify-between h-80 relative ${isMapped ? 'card-mapped ring-4 ring-green-100' : ''}">
-                    ${isMapped ? '<span class="mapped-badge">מופה</span>' : ''}
-                    <div class="flex justify-between items-start"><div class="p-4 bg-indigo-50 text-indigo-600 rounded-2xl text-2xl font-black italic shadow-inner">FILE</div><input type="checkbox" onchange="toggleFile(${f.id})" ${selected.includes(f.id) ? 'checked' : ''} class="w-8 h-8 rounded-xl accent-indigo-600 cursor-pointer"></div>
-                    <h3 class="text-xl font-black truncate text-slate-800">${f.original_name}</h3>
-                    <div class="flex justify-between items-center pt-4 border-t"><button onclick="openMapping(${f.id})" class="text-indigo-600 font-bold hover:underline">הגדר מיפוי ⚓</button><button onclick="deleteFile(${f.id})" class="text-red-300 font-bold text-xs hover:underline">מחק</button></div>
-                </div>`;
-            }).join('');
-        }
-
+        // ==================== MAPPING ====================
         function openMapping(id) {
-            currentFileId = id; const f = archive.find(x => x.id === id); const sample = fileSamples[id] || [];
-            let hArr = Array.isArray(f.headers) ? f.headers : JSON.parse(f.headers || '[]');
-            document.getElementById('mappingTitle').innerText = f.original_name;
+            const file = state.files.find(f => f.id === id);
+            if (!file) return;
+            
+            const headers = Array.isArray(file.headers) ? file.headers : JSON.parse(file.headers || '[]');
+            const mapping = state.mappings[id] || { phoneField: headers[0], nameFields: [headers[0]] };
+            const sample = state.fileSamples[id] || [];
+            
+            document.getElementById('mappingTitle').textContent = file.original_name;
             document.getElementById('mappingContent').innerHTML = `
-                <div class="grid grid-cols-2 gap-10 bg-indigo-50 p-10 rounded-[2.5rem] border shadow-inner">
-                    <div><label class="block font-black text-indigo-900 mb-4 italic text-right">בחר עמודות לשם:</label><div class="flex flex-wrap gap-2 flex-row-reverse">${hArr.map(h => `<label class="bg-white px-4 py-2 rounded-xl border text-xs cursor-pointer flex items-center gap-2 shadow-sm"><input type="checkbox" onchange="toggleName(${id}, '${h}')" ${mappings[id].nameFields.includes(h) ? 'checked' : ''}> ${h}</label>`).join('')}</div></div>
-                    <div><label class="block font-black text-indigo-900 mb-4 italic text-right">עמודת טלפון:</label><select onchange="mappings[${id}].phoneField = this.value" class="w-full p-4 rounded-xl shadow-sm font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-400">${hArr.map(h => `<option value="${h}" ${mappings[id].phoneField === h ? 'selected' : ''}>${h}</option>`).join('')}</select></div>
+                <div class="grid grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-2">שדה טלפון</label>
+                        <select id="mappingPhone" class="w-full px-4 py-3 rounded-xl border border-slate-200">
+                            ${headers.map(h => `<option value="${h}" ${mapping.phoneField === h ? 'selected' : ''}>${h}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-2">שדות שם</label>
+                        <div class="flex flex-wrap gap-2">
+                            ${headers.map(h => `
+                                <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer hover:bg-slate-200">
+                                    <input type="checkbox" class="mapping-name-field" value="${h}" ${mapping.nameFields?.includes(h) ? 'checked' : ''}>
+                                    ${h}
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
                 </div>
-                <div class="mt-8 border rounded-[2rem] overflow-hidden bg-white shadow-sm"><table class="w-full text-sm text-right"><thead class="bg-slate-50 italic"><tr>${hArr.map(h => `<th class="p-5 border-b text-slate-400 font-black">${h}</th>`).join('')}</tr></thead><tbody>${sample.map(row => `<tr>${hArr.map(h => `<td class="p-5 border-b text-slate-600 font-bold">${row[h] || ''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+                <div class="bg-slate-50 rounded-xl p-4">
+                    <h4 class="font-semibold text-slate-700 mb-3">דוגמת נתונים</h4>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead><tr>${headers.map(h => `<th class="px-3 py-2 text-right bg-slate-100 font-semibold">${h}</th>`).join('')}</tr></thead>
+                            <tbody>${sample.slice(0, 5).map(row => `<tr>${headers.map(h => `<td class="px-3 py-2 border-t border-slate-200">${row[h] || ''}</td>`).join('')}</tr>`).join('')}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
             document.getElementById('mappingModal').classList.remove('hidden');
+            document.getElementById('mappingModal').dataset.fileId = id;
         }
 
-        function toggleName(id, h) { const arr = mappings[id].nameFields; const i = arr.indexOf(h); if(i > -1) arr.splice(i, 1); else arr.push(h); }
-        function saveAndMark() { if(!selected.includes(currentFileId)) selected.push(currentFileId); closeMapping(); loadArchive(); }
-        function toggleFile(id) { const i = selected.indexOf(id); if(i > -1) selected.splice(i, 1); else selected.push(id); loadArchive(); }
-
-        async function startAnalysis(idFromDashboard = null) {
-            const groupNameInput = document.getElementById('targetGroupName').value;
-            let payload = idFromDashboard ? { groupId: idFromDashboard } : { processingData: selected.map(id => ({ fileId: id, mapping: mappings[id] })), defaultName: document.getElementById('defaultName').value, startSerial: document.getElementById('startSerial').value, targetGroupName: groupNameInput };
+        function saveMapping() {
+            const id = parseInt(document.getElementById('mappingModal').dataset.fileId);
+            const phoneField = document.getElementById('mappingPhone').value;
+            const nameFields = Array.from(document.querySelectorAll('.mapping-name-field:checked')).map(el => el.value);
             
-            Swal.fire({ title: 'מנתח נתונים...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
-            const res = await fetch('/api/analyze', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
-            analysisData = await res.json(); Swal.close();
-            currentGroupId = analysisData.groupId;
+            state.mappings[id] = { phoneField, nameFields: nameFields.length ? nameFields : [phoneField] };
+            if (!state.selectedFiles.includes(id)) state.selectedFiles.push(id);
             
-            document.getElementById('currentImportName').innerText = analysisData.targetGroupName;
-            resolvedMap.clear(); manualResolved.clear();
-
-            // מנגנון בחירה חכמה עם התעלמות ממילות מפתח
-            const ignoreList = document.getElementById('ignoreKeywords').value.split(',').map(s => s.trim()).filter(s => s);
-
-            analysisData.conflicts.forEach(c => {
-                // סנן שמות שמכילים מילות מפתח
-                const filteredNames = c.names.filter(n => !ignoreList.some(k => n.includes(k)));
-                // וודא שיש שם קצר (לפחות 2 תווים) שנשאר אחרי הסינון
-                const validAlternatives = filteredNames.filter(n => n.length >= 2);
-
-                let defaultChoice;
-                if (validAlternatives.length > 0) {
-                    // בחר את הארוך ביותר מבין ה"תקינים"
-                    defaultChoice = validAlternatives.reduce((a, b) => a.length >= b.length ? a : b);
-                } else {
-                    // אם כולם מכילים מילות מפתח, חזור לברירת מחדל אבסולוטית (הארוך ביותר)
-                    defaultChoice = c.names.reduce((a, b) => a.length >= b.length ? a : b);
-                }
-
-                resolvedMap.set(c.phone, c.saved || defaultChoice);
-                if(c.saved) manualResolved.add(c.phone);
-            });
-
-            renderConflicts(); renderAutoResolved(); showView('resolution');
+            closeMapping();
+            loadFiles();
+            Toast.fire({ icon: 'success', title: 'המיפוי נשמר' });
         }
 
-        function renderConflicts() {
-            document.getElementById('conflictSummary').innerText = `נמצאו ${analysisData.conflicts.length} קונפליקטים בשמות.`;
-            document.getElementById('resolution-body').innerHTML = analysisData.conflicts.map((c, i) => {
-                const currentSelection = resolvedMap.get(c.phone);
-                const isManual = manualResolved.has(c.phone);
+        function closeMapping() {
+            document.getElementById('mappingModal').classList.add('hidden');
+        }
+
+        // ==================== PROCESSING ====================
+        async function startProcessing() {
+            if (!state.selectedFiles.length) return;
+            
+            const targetGroupName = document.getElementById('targetGroupName').value || 'רשימה חדשה';
+            const defaultName = document.getElementById('defaultName').value;
+            const startSerial = document.getElementById('startSerial').value;
+            
+            Swal.fire({ title: 'מעבד קבצים...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            try {
+                const processingData = state.selectedFiles.map(id => ({
+                    fileId: id,
+                    mapping: state.mappings[id] || { phoneField: 'Phone', nameFields: ['Name'] }
+                }));
                 
-                return `
-                <tr class="border-b transition-all hover:bg-slate-50 text-right"><td class="p-8 font-black text-indigo-600 text-lg">${c.phone}</td><td class="p-8 text-right"><div class="flex gap-4 flex-wrap justify-start">
-                    ${c.names.map(n => {
-                        let btnClass = "btn-choice";
-                        if(currentSelection === n) btnClass += isManual ? " btn-manual-selected" : " btn-auto-selected";
-                        return `<button onclick="resolveSingle(${i}, '${n}')" class="${btnClass}">${n}</button>`;
-                    }).join('')}
-                    <input type="text" value="${isManual && !c.names.includes(currentSelection) ? currentSelection : ''}" placeholder="שם אחר..." onchange="resolveSingle(${i}, this.value)" class="p-4 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-400 w-48 shadow-inner bg-slate-50 text-right">
-                </div></td></tr>`;
-            }).join('');
+                const result = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ processingData, targetGroupName, defaultName, startSerial })
+                }).then(r => r.json());
+                
+                Swal.close();
+                state.analysisData = result;
+                showAnalysis(result);
+                
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
         }
 
-        function renderAutoResolved() {
-            document.getElementById('auto-resolve-list').innerHTML = analysisData.autoResolved.map(a => `<div class="auto-resolve-item shadow-sm text-right"><span class="font-bold text-indigo-900">${a.phone}</span><span class="font-black text-green-600">${a.name} <span class="text-xs text-slate-300">(אוחד)</span></span></div>`).join('');
+        async function resumeDraft(groupId) {
+            Swal.fire({ title: 'טוען טיוטה...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            try {
+                const result = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ groupId })
+                }).then(r => r.json());
+                
+                Swal.close();
+                state.analysisData = result;
+                showAnalysis(result);
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
         }
 
-        async function resolveSingle(i, name) {
-            const phone = analysisData.conflicts[i].phone;
-            resolvedMap.set(phone, name);
-            manualResolved.add(phone);
-            await fetch('/api/resolve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ phone, name }) });
-            renderConflicts();
-            Toast.fire({ icon: 'success', title: 'הבחירה עודכנה' });
+        function showAnalysis(data) {
+            document.getElementById('analysisTitle').textContent = data.targetGroupName;
+            
+            const stats = data.stats || {};
+            document.getElementById('analysisSummary').textContent = `${stats.totalParsed?.toLocaleString() || 0} נקראו מ-${stats.byFile?.length || 0} קבצים`;
+            
+            // Stats cards
+            document.getElementById('analysisStats').innerHTML = `
+                <div class="bg-slate-100 rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-slate-700">${(stats.totalParsed || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">נקראו</p>
+                </div>
+                <div class="bg-green-100 rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-green-600">${(data.allData?.length || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">אושרו</p>
+                </div>
+                <div class="bg-red-100 rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-red-600">${(data.rejectedContacts?.length || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">נדחו</p>
+                </div>
+                <div class="bg-amber-100 rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-amber-600">${(data.conflicts?.length || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">קונפליקטים</p>
+                </div>
+                <div class="bg-blue-100 rounded-xl p-4 text-center">
+                    <p class="text-2xl font-black text-blue-600">${(data.autoResolved?.length || 0).toLocaleString()}</p>
+                    <p class="text-sm text-slate-500">כפילויות</p>
+                </div>
+            `;
+            
+            document.getElementById('acceptedCount').textContent = data.allData?.length || 0;
+            document.getElementById('rejectedCount').textContent = data.rejectedContacts?.length || 0;
+            document.getElementById('conflictsCount').textContent = data.conflicts?.length || 0;
+            document.getElementById('duplicatesCount').textContent = data.autoResolved?.length || 0;
+            
+            showAnalysisTab('accepted');
+            showView('analysis');
         }
 
-        async function finalizeProcessUI() {
-            Swal.fire({ title: 'מייבא נתונים...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
-            await fetch('/api/finalize', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ groupId: currentGroupId, groupName: analysisData.targetGroupName, contacts: analysisData.allData, fileIds: analysisData.fileIds }) });
-            Swal.fire({ icon: 'success', title: 'הצלחה!', text: 'הרשימה מוכנה לשימוש.' }).then(() => location.reload());
+        function showAnalysisTab(tab) {
+            document.querySelectorAll('.analysis-tab').forEach(t => {
+                t.classList.remove('border-indigo-500', 'text-indigo-600');
+                t.classList.add('border-transparent');
+            });
+            document.querySelector(`.analysis-tab[data-tab="${tab}"]`).classList.add('border-indigo-500', 'text-indigo-600');
+            
+            const content = document.getElementById('analysisContent');
+            const data = state.analysisData;
+            
+            if (tab === 'accepted') {
+                content.innerHTML = `
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-50"><tr>
+                                <th class="px-4 py-3 text-right font-semibold">שם</th>
+                                <th class="px-4 py-3 text-right font-semibold">טלפון</th>
+                                <th class="px-4 py-3 text-right font-semibold">מקור</th>
+                            </tr></thead>
+                            <tbody>${(data.allData || []).slice(0, 100).map(c => `
+                                <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-2">${c.name}</td>
+                                    <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
+                                    <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>
+                        ${data.allData?.length > 100 ? `<p class="text-center text-slate-400 mt-4">מציג 100 מתוך ${data.allData.length}</p>` : ''}
+                    </div>
+                `;
+            } else if (tab === 'rejected') {
+                const reasons = {};
+                (data.rejectedContacts || []).forEach(c => { reasons[c.reason] = (reasons[c.reason] || 0) + 1; });
+                
+                content.innerHTML = `
+                    <div class="grid grid-cols-4 gap-3 mb-6">
+                        ${Object.entries(reasons).map(([reason, count]) => `
+                            <div class="bg-red-50 rounded-xl p-3 text-center">
+                                <p class="text-xl font-bold text-red-600">${count.toLocaleString()}</p>
+                                <p class="text-xs text-slate-500">${getReasonText(reason)}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-50"><tr>
+                                <th class="px-4 py-3 text-right font-semibold">שם</th>
+                                <th class="px-4 py-3 text-right font-semibold">טלפון מקורי</th>
+                                <th class="px-4 py-3 text-right font-semibold">סיבת דחייה</th>
+                                <th class="px-4 py-3 text-right font-semibold">מקור</th>
+                            </tr></thead>
+                            <tbody>${(data.rejectedContacts || []).slice(0, 100).map(c => `
+                                <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-2">${c.name}</td>
+                                    <td class="px-4 py-2 font-mono text-slate-600">${c.phone || '(ריק)'}</td>
+                                    <td class="px-4 py-2"><span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">${getReasonText(c.reason)}</span></td>
+                                    <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>
+                        ${data.rejectedContacts?.length > 100 ? `<p class="text-center text-slate-400 mt-4">מציג 100 מתוך ${data.rejectedContacts.length}</p>` : ''}
+                    </div>
+                `;
+            } else if (tab === 'conflicts') {
+                content.innerHTML = (data.conflicts || []).length ? `
+                    <div class="space-y-4">
+                        ${(data.conflicts || []).map((c, i) => `
+                            <div class="bg-amber-50 rounded-xl p-4">
+                                <p class="font-mono text-lg font-bold text-slate-700 mb-3">${c.phone}</p>
+                                <div class="flex flex-wrap gap-2">
+                                    ${c.names.map(name => `
+                                        <button onclick="resolveConflict('${c.phone}', '${name.replace(/'/g, "\\'")}', this)" 
+                                                class="px-4 py-2 bg-white rounded-lg border-2 border-slate-200 font-medium hover:border-indigo-500 hover:bg-indigo-50 transition-all">
+                                            ${name}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p class="text-center text-slate-400 py-8">אין קונפליקטים 🎉</p>';
+            } else if (tab === 'duplicates') {
+                content.innerHTML = (data.autoResolved || []).length ? `
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-slate-50"><tr>
+                                <th class="px-4 py-3 text-right font-semibold">טלפון</th>
+                                <th class="px-4 py-3 text-right font-semibold">שם שנבחר</th>
+                                <th class="px-4 py-3 text-right font-semibold">מופעים</th>
+                            </tr></thead>
+                            <tbody>${(data.autoResolved || []).map(c => `
+                                <tr class="border-b border-slate-100">
+                                    <td class="px-4 py-2 font-mono">${c.phone}</td>
+                                    <td class="px-4 py-2">${c.name}</td>
+                                    <td class="px-4 py-2 text-slate-500">${c.count || 2} פעמים</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>
+                    </div>
+                ` : '<p class="text-center text-slate-400 py-8">לא נמצאו כפילויות</p>';
+            }
         }
 
-        async function viewContacts(id, name) {
-            currentGroupId = id; document.getElementById('currentGroupName').innerText = name;
-            const res = await fetch(`/api/groups/${id}/contacts`); const data = await res.json();
-            document.getElementById('currentCount').innerText = `${data.length} נמענים סה"כ`;
-            document.getElementById('contacts-body').innerHTML = data.map(c => `<tr><td class="p-8 border-b font-black text-slate-800">${c.full_name}</td><td class="p-8 border-b text-slate-500 italic font-bold text-left">${c.phone}</td></tr>`).join('');
-            showView('contacts');
+        function getReasonText(reason) {
+            const reasons = {
+                'empty_phone': 'טלפון ריק',
+                'too_short': 'קצר מדי',
+                'too_long': 'ארוך מדי',
+                'invalid_phone': 'לא תקין'
+            };
+            return reasons[reason] || reason;
         }
 
-        function exportData(type) { window.location.href = `/api/export/${type}/${currentGroupId}`; }
-
-        async function loadDashboard() {
-            const res = await fetch('/api/groups'); const data = await res.json();
-            document.getElementById('groups-list').innerHTML = data.map(g => `
-                <div class="luxury-card p-12 cursor-pointer transition-all hover:scale-[1.02] ${g.status === 'draft' ? 'draft-card' : ''}" onclick="${g.status === 'draft' ? `startAnalysis(${g.id})` : `viewContacts(${g.id}, '${g.name}')`}">
-                    <div class="flex justify-between items-start mb-8"><div class="p-5 bg-indigo-50 text-indigo-600 rounded-[1.8rem] text-4xl font-black italic shadow-inner">R</div>${g.status === 'draft' ? '<span class="draft-badge animate-pulse">טיוטה פתוחה</span>' : ''}</div>
-                    <h3 class="text-2xl font-black mb-1 text-slate-800">${g.name}</h3>
-                    <p class="text-indigo-600 font-black text-4xl">${g.count} <span class="text-xs text-slate-300 block uppercase tracking-widest mt-2">נמענים</span></p>
-                    <div class="flex gap-4 mt-10"><button onclick="event.stopPropagation(); deleteGroup(${g.id})" class="text-red-300 font-bold text-sm hover:text-red-600 transition-all underline">מחק</button></div>
-                </div>`).join('');
+        async function resolveConflict(phone, name, btn) {
+            document.querySelectorAll(`button[onclick*="${phone}"]`).forEach(b => {
+                b.classList.remove('border-indigo-500', 'bg-indigo-100');
+            });
+            btn.classList.add('border-indigo-500', 'bg-indigo-100');
+            
+            await fetch('/api/resolve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, name })
+            });
+            
+            Toast.fire({ icon: 'success', title: 'הבחירה נשמרה' });
         }
 
-        function showView(v) { ['dashboard', 'archive', 'contacts', 'resolution'].forEach(view => document.getElementById(view+'-view').classList.add('hidden')); document.getElementById(v+'-view').classList.remove('hidden'); }
-        function closeMapping() { document.getElementById('mappingModal').classList.add('hidden'); }
-        async function deleteFile(id) { const r = await Swal.fire({title:'למחוק?', icon:'warning', showCancelButton:true, confirmButtonColor: '#ef4444'}); if(r.isConfirmed) { await fetch('/api/files/'+id, {method:'DELETE'}); loadArchive(); } }
-        async function deleteGroup(id) { const r = await Swal.fire({title:'למחוק?', icon:'warning', showCancelButton:true, confirmButtonColor: '#ef4444'}); if(r.isConfirmed) { await fetch('/api/groups/'+id, {method:'DELETE'}); loadDashboard(); } }
+        async function finalizeGroup() {
+            const data = state.analysisData;
+            if (!data) return;
+            
+            Swal.fire({ title: 'שומר רשימה...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            try {
+                const result = await fetch('/api/finalize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        groupId: data.groupId,
+                        groupName: data.targetGroupName,
+                        contacts: data.allData,
+                        fileIds: data.fileIds,
+                        stats: data.stats
+                    })
+                }).then(r => r.json());
+                
+                Swal.fire({ 
+                    icon: 'success', 
+                    title: 'הרשימה נשמרה!', 
+                    text: `${result.contactsCount?.toLocaleString() || 0} אנשי קשר נשמרו`,
+                    confirmButtonText: 'צפה ברשימה'
+                }).then(() => {
+                    state.selectedFiles = [];
+                    state.analysisData = null;
+                    viewGroup(data.groupId);
+                });
+                
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
+        }
 
-        loadDashboard(); loadArchive();
+        // ==================== ADD TO GROUP ====================
+        async function addFilesToGroup() {
+            // TODO: implement add files to existing group
+            Toast.fire({ icon: 'info', title: 'פיצ\'ר בפיתוח' });
+        }
+
+        // ==================== INIT ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            showView('dashboard');
+        });
     </script>
 </body>
 </html>

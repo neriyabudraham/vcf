@@ -14,7 +14,7 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
 });
-const upload = multer({ storage: storage });
+const upload = multer({ storage: storage, limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB max
 
 const pool = new Pool({ 
     user: process.env.DB_USER || 'postgres', 
@@ -25,12 +25,31 @@ const pool = new Pool({
 });
 
 app.use(express.json({limit: '350mb'}));
+app.use(express.static(__dirname));
 app.use(session({ secret: 'vcf-luxury-elite-v8-final', resave: true, saveUninitialized: false, cookie: { maxAge: 24 * 60 * 60 * 1000 } }));
 
 const auth = (req, res, next) => {
     if (req.session && req.session.authenticated) return next();
     if (req.path.startsWith('/api')) return res.status(401).json({ error: 'Session Expired' });
     res.redirect('/login');
+};
+
+// ==================== UTILITY FUNCTIONS ====================
+
+const normalizePhone = (p) => {
+    if(!p) return { normalized: null, reason: 'empty_phone' };
+    let c = p.toString().replace(/\D/g, '');
+    if(!c || c.length === 0) return { normalized: null, reason: 'empty_phone' };
+    if(c.length < 7) return { normalized: null, reason: 'too_short', original: c };
+    if(c.length > 15) return { normalized: null, reason: 'too_long', original: c };
+    
+    // נרמול מספרים ישראליים
+    if(c.startsWith('05')) c = '972' + c.substring(1);
+    else if(c.startsWith('5') && c.length === 9) c = '972' + c;
+    else if(c.startsWith('00972')) c = '972' + c.substring(5);
+    else if(c.startsWith('972') && c.length >= 11) { /* כבר מנורמל */ }
+    
+    return { normalized: c, reason: null };
 };
 
 const getBaseName = (name) => {
@@ -43,157 +62,150 @@ const cleanName = (name) => {
     let n = name.toString().trim();
     n = n.replace(/\s?[\(\-]\d+[\)]?$/g, ''); 
     if (/^[\.\-\_\*\s\d]+$/.test(n)) return ''; 
-    n = n.replace(/[\-\Reference\Reference\Reference\.\*]{2,}/g, ' ');
-    n = n.replace(/[^א-תa-zA-Z0-9\s\'\"\-\(\)]/g, ' ');
+    n = n.replace(/[^א-תa-zA-Z0-9\s\'\"\-\(\)\.]/g, ' ');
     return n.replace(/\s\s+/g, ' ').trim();
-};
-
-const normalizePhone = (p) => {
-    if(!p) return null;
-    let c = p.toString().replace(/\D/g, '');
-    if(!c || c.length < 7) return null; // מינימום 7 ספרות (כולל קידומת)
-    
-    // נרמול מספרים ישראליים
-    if(c.startsWith('05')) c = '972' + c.substring(1);
-    else if(c.startsWith('5') && c.length === 9) c = '972' + c;
-    else if(c.startsWith('9725') && c.length === 12) { /* כבר מנורמל */ }
-    else if(c.startsWith('00972')) c = '972' + c.substring(5);
-    else if(c.startsWith('+972')) c = '972' + c.substring(4);
-    
-    return (c.length >= 7 && c.length <= 15) ? c : null;
 };
 
 function parseVcf(content) {
     const contacts = [];
-    
-    // נרמול סופי שורות - המרה לפורמט אחיד
     content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    
-    // פיצול לפי כרטיסים
     const cards = content.split(/^BEGIN:VCARD$/gim);
     
     for (const card of cards) {
         if (!card.includes('END:VCARD')) continue;
         
-        // חיבור שורות מקופלות (Line Folding - RFC 6350)
-        // סוג 1: שורה שמתחילה ברווח או טאב היא המשך של הקודמת
-        // סוג 2: Quoted-Printable - שורה שמסתיימת ב-= ממשיכה בשורה הבאה
-        let unfoldedCard = card
-            .replace(/=\n/g, '')           // QP soft line break
-            .replace(/\n[ \t]/g, '');      // Standard vCard line folding
-        
+        let unfoldedCard = card.replace(/=\n/g, '').replace(/\n[ \t]/g, '');
         const lines = unfoldedCard.split('\n');
-        let entry = { 'Name': '', 'Phone': '' };
+        let entry = { Name: '', Phone: '', Email: '', OriginalData: {} };
         let phones = [];
 
         for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
-            
             const upper = trimmed.toUpperCase();
             
-            // בדיקה ספציפית לשדה FN (Full Name)
             if (upper.startsWith('FN:') || upper.startsWith('FN;')) {
                 let val = trimmed.substring(trimmed.indexOf(':') + 1).trim();
                 val = decodeVcfValue(val, upper);
-                if (val) entry['Name'] = val;
+                if (val) entry.Name = val;
             }
-            // בדיקה ספציפית לשדה N (Name components) - רק אם מתחיל ב-N: או N;
             else if ((upper.startsWith('N:') || upper.startsWith('N;')) && !upper.startsWith('NOTE') && !upper.startsWith('NICKNAME')) {
                 let val = trimmed.substring(trimmed.indexOf(':') + 1).trim();
                 val = decodeVcfValue(val, upper);
-                // N הוא בפורמט: Last;First;Middle;Prefix;Suffix
                 val = val.split(';').filter(part => part.trim()).join(' ');
-                // N משמש רק אם אין FN
-                if (val && !entry['Name']) entry['Name'] = val;
+                if (val && !entry.Name) entry.Name = val;
             }
-            // טיפול בטלפונים - איסוף כל המספרים
             else if (upper.startsWith('TEL:') || upper.startsWith('TEL;')) {
                 let phoneVal = trimmed.substring(trimmed.lastIndexOf(':') + 1);
-                phoneVal = phoneVal.replace(/[^\d+]/g, ''); // שמור רק ספרות ו-+
+                phoneVal = phoneVal.replace(/[^\d+]/g, '');
                 if (phoneVal) phones.push(phoneVal);
+                
+                // שמור את כל הטלפונים ב-OriginalData
+                if (!entry.OriginalData.phones) entry.OriginalData.phones = [];
+                entry.OriginalData.phones.push(phoneVal);
+            }
+            else if (upper.startsWith('EMAIL:') || upper.startsWith('EMAIL;')) {
+                let emailVal = trimmed.substring(trimmed.indexOf(':') + 1).trim();
+                if (emailVal && !entry.Email) entry.Email = emailVal;
+            }
+            else if (upper.startsWith('ORG:') || upper.startsWith('ORG;')) {
+                entry.OriginalData.organization = trimmed.substring(trimmed.indexOf(':') + 1).trim();
+            }
+            else if (upper.startsWith('NOTE:') || upper.startsWith('NOTE;')) {
+                entry.OriginalData.note = decodeVcfValue(trimmed.substring(trimmed.indexOf(':') + 1).trim(), upper);
             }
         }
         
-        // בחר את הטלפון הראשון שנראה תקין (מעדיף מספרים ישראליים)
-        entry['Phone'] = phones.find(p => /^(\+?972|05)/.test(p)) || phones[0] || '';
-        
-        if (entry.Phone || entry.Name) {
-            contacts.push(entry);
-        }
+        entry.Phone = phones.find(p => /^(\+?972|05)/.test(p)) || phones[0] || '';
+        if (entry.Phone || entry.Name) contacts.push(entry);
     }
     
     return contacts;
 }
 
-// פונקציה לפענוח ערכים מקודדים (Quoted-Printable, Base64)
 function decodeVcfValue(val, upperLine) {
     if (!val) return '';
-    
-    // פענוח Quoted-Printable
     if (upperLine.includes('QUOTED-PRINTABLE') || upperLine.includes('ENCODING=QP')) {
         try {
-            // שלב 1: החלפת כל =XX ל-%XX
             const percentEncoded = val.replace(/=([0-9A-F]{2})/gi, '%$1');
-            // שלב 2: פענוח כל המחרוזת ביחד (חשוב ל-UTF-8 מרובה בתים)
             val = decodeURIComponent(percentEncoded);
         } catch(e) {
-            // פולבק: נסה לפענח בחלקים
             try {
                 val = val.replace(/=([0-9A-F]{2})/gi, (match, hex) => {
-                    try {
-                        return String.fromCharCode(parseInt(hex, 16));
-                    } catch (e) {
-                        return '';
-                    }
+                    try { return String.fromCharCode(parseInt(hex, 16)); } catch (e) { return ''; }
                 });
             } catch(e2) {
-                // אם הכל נכשל, פשוט נקה את הקידוד
                 val = val.replace(/=[0-9A-F]{2}/gi, '');
             }
         }
     }
-    
     return val.trim();
 }
 
+// ==================== AUTH ROUTES ====================
+
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.post('/login', (req, res) => {
-    if (req.body.email === 'office@neriyabudraham.co.il') { req.session.authenticated = true; return res.json({ success: true }); }
+    if (req.body.email === 'office@neriyabudraham.co.il') { 
+        req.session.authenticated = true; 
+        return res.json({ success: true }); 
+    }
     res.status(401).send();
 });
 app.get('/', auth, (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// Upload עם SSE לפרוגרס בזמן אמת
+// ==================== UPLOAD & PARSE ====================
+
 app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
     try {
         const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+        const fileSize = req.file.size;
         let rows = [];
-        let parsedCount = 0;
         
-        console.log(`[UPLOAD] Processing file: ${originalName}`);
+        console.log(`[UPLOAD] Processing file: ${originalName} (${(fileSize/1024/1024).toFixed(2)} MB)`);
         
         if (req.file.originalname.toLowerCase().endsWith('.vcf')) {
             const content = fs.readFileSync(req.file.path, 'utf8');
             rows = parseVcf(content);
-            parsedCount = rows.length;
-            console.log(`[UPLOAD] VCF parsed: ${parsedCount} contacts`);
         } else {
             const stream = fs.createReadStream(req.file.path).pipe(csv());
-            for await (const row of stream) { 
-                rows.push(row); 
-                parsedCount++;
-            }
-            console.log(`[UPLOAD] CSV parsed: ${parsedCount} rows`);
+            for await (const row of stream) rows.push(row);
         }
         
-        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-        const dbFile = await pool.query('INSERT INTO uploaded_files (original_name, file_path, headers) VALUES ($1, $2, $3) RETURNING id, original_name, headers', [originalName, req.file.path, JSON.stringify(headers)]);
+        // ניתוח מהיר של הנתונים
+        let validCount = 0, rejectedCount = 0;
+        const rejectionReasons = {};
+        
+        rows.forEach(row => {
+            const phone = row.Phone || row.phone || row.TEL || '';
+            const result = normalizePhone(phone);
+            if (result.normalized) {
+                validCount++;
+            } else {
+                rejectedCount++;
+                rejectionReasons[result.reason] = (rejectionReasons[result.reason] || 0) + 1;
+            }
+        });
+        
+        console.log(`[UPLOAD] Parsed: ${rows.length}, Valid: ${validCount}, Rejected: ${rejectedCount}`);
+        console.log(`[UPLOAD] Rejection reasons:`, rejectionReasons);
+        
+        const headers = rows.length > 0 ? Object.keys(rows[0]).filter(k => k !== 'OriginalData') : [];
+        const dbFile = await pool.query(
+            `INSERT INTO uploaded_files (original_name, file_path, file_size, headers, parsed_count, valid_count, rejected_count) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+            [originalName, req.file.path, fileSize, JSON.stringify(headers), rows.length, validCount, rejectedCount]
+        );
         
         res.json({ 
             ...dbFile.rows[0], 
             sample: rows.slice(0, 10),
-            parsedCount 
+            stats: {
+                total: rows.length,
+                valid: validCount,
+                rejected: rejectedCount,
+                rejectionReasons
+            }
         });
     } catch (err) { 
         console.error(`[UPLOAD] Error:`, err);
@@ -201,66 +213,493 @@ app.post('/api/upload', auth, upload.single('file'), async (req, res) => {
     }
 });
 
-// SSE endpoint לפרוגרס עיבוד בזמן אמת
-app.get('/api/upload-progress/:uploadId', auth, (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    
-    const uploadId = req.params.uploadId;
-    
-    // שמור את ה-response לעדכונים
-    if (!global.uploadProgress) global.uploadProgress = {};
-    global.uploadProgress[uploadId] = res;
-    
-    req.on('close', () => {
-        delete global.uploadProgress[uploadId];
-    });
-});
-
-// פונקציה לשליחת עדכון פרוגרס
-function sendProgress(uploadId, percent, message) {
-    if (global.uploadProgress && global.uploadProgress[uploadId]) {
-        global.uploadProgress[uploadId].write(`data: ${JSON.stringify({ percent, message })}\n\n`);
-    }
-}
+// ==================== FILES MANAGEMENT ====================
 
 app.get('/api/files', auth, async (req, res) => {
-    const r = await pool.query("SELECT * FROM uploaded_files WHERE status = 'pending' ORDER BY id DESC");
-    res.json(r.rows);
+    try {
+        const r = await pool.query(`
+            SELECT *, 
+                   to_char(created_at, 'DD/MM/YYYY HH24:MI') as created_at_formatted
+            FROM uploaded_files 
+            WHERE status = 'pending' 
+            ORDER BY id DESC
+        `);
+        res.json(r.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
+app.delete('/api/files/:id', auth, async (req, res) => {
+    try {
+        const fRes = await pool.query('DELETE FROM uploaded_files WHERE id = $1 RETURNING file_path', [req.params.id]);
+        if (fRes.rows[0] && fs.existsSync(fRes.rows[0].file_path)) fs.unlinkSync(fRes.rows[0].file_path);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== ANALYZE & PROCESS ====================
+
 app.post('/api/analyze', auth, async (req, res) => {
-    const { processingData, defaultName, startSerial, groupId, targetGroupName } = req.body;
-    const draftRes = await pool.query('SELECT phone, resolved_name FROM import_resolutions');
-    const drafts = new Map(draftRes.rows.map(r => [r.phone, r.resolved_name]));
-    let responseData;
+    const { processingData, defaultName, startSerial, groupId, targetGroupName, addToGroupId } = req.body;
+    
+    try {
+        let responseData;
 
-    if (groupId) {
-        const g = await pool.query('SELECT draft_data, name FROM contact_groups WHERE id = $1', [groupId]);
-        responseData = g.rows[0].draft_data;
-        responseData.targetGroupName = g.rows[0].name;
-    } else {
-        const phoneMap = new Map();
-        const conflicts = [];
-        const autoResolved = [];
-        let serial = parseInt(startSerial) || 1;
+        if (groupId) {
+            // טעינת טיוטה קיימת
+            const g = await pool.query('SELECT draft_data, name FROM contact_groups WHERE id = $1', [groupId]);
+            if (!g.rows[0]) return res.status(404).json({ error: 'Group not found' });
+            responseData = g.rows[0].draft_data;
+            responseData.targetGroupName = g.rows[0].name;
+        } else {
+            // עיבוד חדש
+            const phoneMap = new Map();
+            const conflicts = [];
+            const autoResolved = [];
+            const rejectedContacts = [];
+            let serial = parseInt(startSerial) || 1;
+            
+            let totalStats = {
+                totalParsed: 0,
+                totalValid: 0,
+                totalRejected: 0,
+                totalDuplicates: 0,
+                rejectionReasons: {},
+                byFile: []
+            };
 
-        // לוגים לדיבוג
-        let totalParsed = 0;
-        let totalValidPhones = 0;
-        let totalSkippedNoPhone = 0;
+            for (const item of processingData) {
+                const fileRes = await pool.query('SELECT * FROM uploaded_files WHERE id = $1', [item.fileId]);
+                if (!fileRes.rows[0]) continue;
+                const file = fileRes.rows[0];
+                
+                console.log(`[ANALYZE] Processing: ${file.original_name}`);
+                
+                let rows = [];
+                if (file.file_path.toLowerCase().endsWith('.vcf')) {
+                    rows = parseVcf(fs.readFileSync(file.file_path, 'utf8'));
+                } else {
+                    const stream = fs.createReadStream(file.file_path).pipe(csv());
+                    for await (const row of stream) rows.push(row);
+                }
+                
+                let fileStats = { 
+                    fileName: file.original_name, 
+                    fileId: file.id,
+                    total: rows.length, 
+                    valid: 0, 
+                    rejected: 0,
+                    duplicates: 0,
+                    rejectionReasons: {} 
+                };
+                
+                rows.forEach(row => {
+                    const rawPhone = row[item.mapping.phoneField];
+                    const phoneResult = normalizePhone(rawPhone);
+                    
+                    if (!phoneResult.normalized) {
+                        fileStats.rejected++;
+                        fileStats.rejectionReasons[phoneResult.reason] = (fileStats.rejectionReasons[phoneResult.reason] || 0) + 1;
+                        totalStats.rejectionReasons[phoneResult.reason] = (totalStats.rejectionReasons[phoneResult.reason] || 0) + 1;
+                        
+                        // שמור את איש הקשר שנדחה
+                        rejectedContacts.push({
+                            name: item.mapping.nameFields.map(f => row[f] || '').join(' ').trim() || '(ללא שם)',
+                            phone: rawPhone || '',
+                            reason: phoneResult.reason,
+                            sourceFile: file.original_name,
+                            sourceFileId: file.id,
+                            originalData: row.OriginalData || {}
+                        });
+                        return;
+                    }
+                    
+                    const phone = phoneResult.normalized;
+                    let name = cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
+                    if (!name) name = `${defaultName || 'איש קשר'} ${serial++}`;
+                    
+                    const contactData = {
+                        name,
+                        phone,
+                        phoneRaw: rawPhone,
+                        email: row.Email || row.email || '',
+                        sourceFile: file.original_name,
+                        sourceFileId: file.id,
+                        originalData: row.OriginalData || {}
+                    };
 
+                    if (phoneMap.has(phone)) {
+                        const existing = phoneMap.get(phone);
+                        fileStats.duplicates++;
+                        
+                        if (getBaseName(existing.name) === getBaseName(name)) {
+                            const bestName = existing.name.length >= name.length ? existing.name : name;
+                            existing.name = bestName;
+                            if (!autoResolved.find(a => a.phone === phone)) {
+                                autoResolved.push({ phone, name: bestName, count: 2 });
+                            } else {
+                                const ar = autoResolved.find(a => a.phone === phone);
+                                ar.count++;
+                            }
+                        } else if (existing.name !== name) {
+                            let conf = conflicts.find(c => c.phone === phone);
+                            if (!conf) {
+                                conflicts.push({ phone, names: [existing.name, name], sources: [existing.sourceFile, contactData.sourceFile] });
+                            } else if (!conf.names.includes(name)) {
+                                conf.names.push(name);
+                                conf.sources.push(contactData.sourceFile);
+                            }
+                        }
+                    } else {
+                        phoneMap.set(phone, contactData);
+                        fileStats.valid++;
+                    }
+                });
+                
+                totalStats.totalParsed += fileStats.total;
+                totalStats.totalValid += fileStats.valid;
+                totalStats.totalRejected += fileStats.rejected;
+                totalStats.totalDuplicates += fileStats.duplicates;
+                totalStats.byFile.push(fileStats);
+                
+                console.log(`[ANALYZE] File stats:`, fileStats);
+            }
+
+            console.log(`[ANALYZE] Total stats:`, totalStats);
+
+            responseData = { 
+                conflicts, 
+                autoResolved, 
+                rejectedContacts,
+                allData: Array.from(phoneMap.values()),
+                stats: totalStats,
+                fileIds: processingData.map(d => d.fileId),
+                targetGroupName: targetGroupName || 'ייבוא חדש'
+            };
+
+            // שמור כטיוטה
+            const g = await pool.query(
+                `INSERT INTO contact_groups (name, status, draft_data, stats) 
+                 VALUES ($1, 'draft', $2, $3) RETURNING id`,
+                [responseData.targetGroupName, JSON.stringify(responseData), JSON.stringify(totalStats)]
+            );
+            responseData.groupId = g.rows[0].id;
+        }
+        
+        res.json({ ...responseData, groupId: responseData.groupId || groupId });
+    } catch (err) {
+        console.error('[ANALYZE] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== CONFLICT RESOLUTION ====================
+
+app.post('/api/resolve', auth, async (req, res) => {
+    try {
+        const { phone, name } = req.body;
+        await pool.query(
+            'INSERT INTO import_resolutions (phone, resolved_name) VALUES ($1, $2) ON CONFLICT (phone) DO UPDATE SET resolved_name = $2', 
+            [phone, name]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== FINALIZE GROUP ====================
+
+app.post('/api/finalize', auth, async (req, res) => {
+    const { groupId, groupName, contacts, fileIds, stats } = req.body;
+    
+    try {
+        const resolutions = await pool.query('SELECT phone, resolved_name FROM import_resolutions');
+        const resMap = new Map(resolutions.rows.map(r => [r.phone, r.resolved_name]));
+
+        const finalContacts = [];
+        const nameUsedRegistry = new Map();
+
+        contacts.forEach(c => {
+            let name = resMap.get(c.phone) || c.name;
+            if (nameUsedRegistry.has(name)) {
+                let count = nameUsedRegistry.get(name) + 1;
+                nameUsedRegistry.set(name, count);
+                name = `${name} (${count})`;
+            } else { 
+                nameUsedRegistry.set(name, 1); 
+            }
+            finalContacts.push({ 
+                phone: c.phone, 
+                name, 
+                email: c.email || '',
+                sourceFile: c.sourceFile || '',
+                sourceFileId: c.sourceFileId || null,
+                originalData: c.originalData || {}
+            });
+        });
+
+        // עדכון הקבוצה
+        await pool.query(
+            `UPDATE contact_groups SET name = $1, status = 'ready', draft_data = NULL, stats = $3, version = 1 WHERE id = $2`,
+            [groupName, groupId, JSON.stringify(stats || {})]
+        );
+        
+        // שמירת גרסה ראשונה
+        await pool.query(
+            `INSERT INTO group_versions (group_id, version_number, version_name, contacts_snapshot, stats) 
+             VALUES ($1, 1, 'גרסה ראשונית', $2, $3)`,
+            [groupId, JSON.stringify(finalContacts), JSON.stringify(stats || {})]
+        );
+        
+        // הכנסת אנשי קשר
+        let batch = [];
+        for (const c of finalContacts) {
+            batch.push([groupId, c.name, c.phone, c.phone, c.email, c.sourceFileId, c.sourceFile, JSON.stringify(c.originalData), '{}']);
+            if (batch.length >= 1000) {
+                await pool.query(
+                    `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                     SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::jsonb[], $9::jsonb[])`,
+                    [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3]), batch.map(r=>r[4]), batch.map(r=>r[5]), batch.map(r=>r[6]), batch.map(r=>r[7]), batch.map(r=>r[8])]
+                );
+                batch = [];
+            }
+        }
+        if (batch.length > 0) {
+            await pool.query(
+                `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                 SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::jsonb[], $9::jsonb[])`,
+                [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3]), batch.map(r=>r[4]), batch.map(r=>r[5]), batch.map(r=>r[6]), batch.map(r=>r[7]), batch.map(r=>r[8])]
+            );
+        }
+        
+        // עדכון קבצים כמעובדים
+        if (fileIds && fileIds.length > 0) {
+            await pool.query("UPDATE uploaded_files SET status = 'processed' WHERE id = ANY($1)", [fileIds]);
+        }
+        
+        await pool.query("TRUNCATE TABLE import_resolutions");
+        res.json({ success: true, contactsCount: finalContacts.length });
+    } catch (err) {
+        console.error('[FINALIZE] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== GROUPS MANAGEMENT ====================
+
+app.get('/api/groups', auth, async (req, res) => {
+    try {
+        const r = await pool.query(`
+            SELECT g.*, 
+                   CASE 
+                       WHEN g.status = 'draft' THEN COALESCE(jsonb_array_length(g.draft_data->'allData'), 0)
+                       ELSE (SELECT count(*) FROM contacts WHERE group_id = g.id) 
+                   END as count,
+                   to_char(g.created_at, 'DD/MM/YYYY HH24:MI') as created_at_formatted,
+                   to_char(g.updated_at, 'DD/MM/YYYY HH24:MI') as updated_at_formatted
+            FROM contact_groups g 
+            ORDER BY CASE WHEN g.status = 'draft' THEN 0 ELSE 1 END, g.updated_at DESC
+        `);
+        res.json(r.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/groups/:id', auth, async (req, res) => {
+    try {
+        const g = await pool.query('SELECT * FROM contact_groups WHERE id = $1', [req.params.id]);
+        if (!g.rows[0]) return res.status(404).json({ error: 'Group not found' });
+        
+        const contacts = await pool.query(
+            'SELECT * FROM contacts WHERE group_id = $1 ORDER BY full_name ASC',
+            [req.params.id]
+        );
+        
+        const versions = await pool.query(
+            `SELECT id, version_number, version_name, stats, 
+                    to_char(created_at, 'DD/MM/YYYY HH24:MI') as created_at_formatted
+             FROM group_versions WHERE group_id = $1 ORDER BY version_number DESC`,
+            [req.params.id]
+        );
+        
+        res.json({
+            ...g.rows[0],
+            contacts: contacts.rows,
+            versions: versions.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/groups/:id/contacts', auth, async (req, res) => {
+    try {
+        const { search, page = 1, limit = 100 } = req.query;
+        const offset = (page - 1) * limit;
+        
+        let query = 'SELECT * FROM contacts WHERE group_id = $1';
+        let params = [req.params.id];
+        
+        if (search) {
+            query += ' AND (full_name ILIKE $2 OR phone ILIKE $2)';
+            params.push(`%${search}%`);
+        }
+        
+        query += ' ORDER BY full_name ASC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+        params.push(limit, offset);
+        
+        const r = await pool.query(query, params);
+        
+        // ספירה כוללת
+        let countQuery = 'SELECT count(*) FROM contacts WHERE group_id = $1';
+        let countParams = [req.params.id];
+        if (search) {
+            countQuery += ' AND (full_name ILIKE $2 OR phone ILIKE $2)';
+            countParams.push(`%${search}%`);
+        }
+        const countRes = await pool.query(countQuery, countParams);
+        
+        res.json({
+            contacts: r.rows,
+            total: parseInt(countRes.rows[0].count),
+            page: parseInt(page),
+            limit: parseInt(limit)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/groups/:id', auth, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM group_versions WHERE group_id = $1', [req.params.id]);
+        await pool.query('DELETE FROM contacts WHERE group_id = $1', [req.params.id]);
+        await pool.query('DELETE FROM contact_groups WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== VERSIONING ====================
+
+app.post('/api/groups/:id/save-version', auth, async (req, res) => {
+    try {
+        const { versionName } = req.body;
+        const groupId = req.params.id;
+        
+        // קבל גרסה נוכחית
+        const g = await pool.query('SELECT version FROM contact_groups WHERE id = $1', [groupId]);
+        const newVersion = (g.rows[0]?.version || 0) + 1;
+        
+        // קבל את כל אנשי הקשר
+        const contacts = await pool.query('SELECT * FROM contacts WHERE group_id = $1', [groupId]);
+        
+        // שמור snapshot
+        await pool.query(
+            `INSERT INTO group_versions (group_id, version_number, version_name, contacts_snapshot, stats) 
+             VALUES ($1, $2, $3, $4, (SELECT stats FROM contact_groups WHERE id = $1))`,
+            [groupId, newVersion, versionName || `גרסה ${newVersion}`, JSON.stringify(contacts.rows)]
+        );
+        
+        // עדכן מספר גרסה
+        await pool.query('UPDATE contact_groups SET version = $2 WHERE id = $1', [groupId, newVersion]);
+        
+        res.json({ success: true, version: newVersion });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/groups/:id/restore-version/:versionId', auth, async (req, res) => {
+    try {
+        const { id, versionId } = req.params;
+        
+        // קבל את ה-snapshot
+        const v = await pool.query('SELECT * FROM group_versions WHERE id = $1 AND group_id = $2', [versionId, id]);
+        if (!v.rows[0]) return res.status(404).json({ error: 'Version not found' });
+        
+        const snapshot = v.rows[0].contacts_snapshot;
+        
+        // מחק אנשי קשר קיימים
+        await pool.query('DELETE FROM contacts WHERE group_id = $1', [id]);
+        
+        // שחזר מה-snapshot
+        if (snapshot && snapshot.length > 0) {
+            for (const c of snapshot) {
+                await pool.query(
+                    `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                    [id, c.full_name, c.phone, c.phone_normalized, c.email, c.source_file_id, c.source_file_name, 
+                     JSON.stringify(c.original_data || {}), JSON.stringify(c.metadata || {})]
+                );
+            }
+        }
+        
+        // עדכן סטטיסטיקות
+        await pool.query('UPDATE contact_groups SET stats = $2 WHERE id = $1', [id, JSON.stringify(v.rows[0].stats || {})]);
+        
+        res.json({ success: true, restoredCount: snapshot?.length || 0 });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/groups/:id/versions', auth, async (req, res) => {
+    try {
+        const versions = await pool.query(
+            `SELECT id, version_number, version_name, 
+                    jsonb_array_length(contacts_snapshot) as contacts_count,
+                    stats,
+                    to_char(created_at, 'DD/MM/YYYY HH24:MI') as created_at_formatted
+             FROM group_versions WHERE group_id = $1 ORDER BY version_number DESC`,
+            [req.params.id]
+        );
+        res.json(versions.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== ADD TO EXISTING GROUP ====================
+
+app.post('/api/groups/:id/add-files', auth, async (req, res) => {
+    const { processingData, defaultName } = req.body;
+    const groupId = req.params.id;
+    
+    try {
+        // שמור גרסה נוכחית לפני השינוי
+        const g = await pool.query('SELECT * FROM contact_groups WHERE id = $1', [groupId]);
+        if (!g.rows[0] || g.rows[0].status !== 'ready') {
+            return res.status(400).json({ error: 'Group not ready for additions' });
+        }
+        
+        const currentContacts = await pool.query('SELECT * FROM contacts WHERE group_id = $1', [groupId]);
+        const newVersion = (g.rows[0].version || 0) + 1;
+        
+        // שמור snapshot
+        await pool.query(
+            `INSERT INTO group_versions (group_id, version_number, version_name, contacts_snapshot, stats) 
+             VALUES ($1, $2, $3, $4, $5)`,
+            [groupId, newVersion, `לפני הוספת קבצים`, JSON.stringify(currentContacts.rows), JSON.stringify(g.rows[0].stats)]
+        );
+        
+        // בנה map של טלפונים קיימים
+        const existingPhones = new Map();
+        currentContacts.rows.forEach(c => existingPhones.set(c.phone_normalized || c.phone, c));
+        
+        let added = 0, skipped = 0, duplicates = 0;
+        let serial = currentContacts.rows.length + 1;
+        
         for (const item of processingData) {
             const fileRes = await pool.query('SELECT * FROM uploaded_files WHERE id = $1', [item.fileId]);
-            if (!fileRes.rows[0]) {
-                console.log(`[ANALYZE] File ID ${item.fileId} not found in DB`);
-                continue;
-            }
+            if (!fileRes.rows[0]) continue;
             const file = fileRes.rows[0];
-            
-            console.log(`[ANALYZE] Processing file: ${file.original_name}`);
-            console.log(`[ANALYZE] Mapping: phoneField=${item.mapping?.phoneField}, nameFields=${JSON.stringify(item.mapping?.nameFields)}`);
             
             let rows = [];
             if (file.file_path.toLowerCase().endsWith('.vcf')) {
@@ -270,162 +709,102 @@ app.post('/api/analyze', auth, async (req, res) => {
                 for await (const row of stream) rows.push(row);
             }
             
-            console.log(`[ANALYZE] Parsed ${rows.length} rows from file`);
-            totalParsed += rows.length;
-            
-            // בדוק את ה-mapping
-            if (!item.mapping || !item.mapping.phoneField) {
-                console.log(`[ANALYZE] WARNING: Missing mapping for file ${file.id}`);
-                continue;
-            }
-
-            let fileValidPhones = 0;
-            let fileSkipped = 0;
-            let skippedExamples = [];
-            
-            rows.forEach(row => {
+            for (const row of rows) {
                 const rawPhone = row[item.mapping.phoneField];
-                const phone = normalizePhone(rawPhone);
+                const phoneResult = normalizePhone(rawPhone);
                 
-                if (!phone) {
-                    fileSkipped++;
-                    // שמור דוגמאות למספרים שנדחו
-                    if (skippedExamples.length < 10) {
-                        skippedExamples.push({ name: row[item.mapping.nameFields?.[0]] || '', phone: rawPhone || '(ריק)' });
-                    }
-                    return;
+                if (!phoneResult.normalized) {
+                    skipped++;
+                    continue;
                 }
                 
-                fileValidPhones++;
+                const phone = phoneResult.normalized;
+                
+                if (existingPhones.has(phone)) {
+                    duplicates++;
+                    continue;
+                }
+                
                 let name = cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
                 if (!name) name = `${defaultName || 'איש קשר'} ${serial++}`;
-
-                if (phoneMap.has(phone)) {
-                    const existing = phoneMap.get(phone);
-                    if (getBaseName(existing) === getBaseName(name)) {
-                        const bestName = existing.length >= name.length ? existing : name;
-                        phoneMap.set(phone, bestName);
-                        if (!autoResolved.find(a => a.phone === phone)) autoResolved.push({ phone, name: bestName });
-                    } else if (existing !== name) {
-                        let conf = conflicts.find(c => c.phone === phone);
-                        if (!conf) conflicts.push({ phone, names: [existing, name] });
-                        else if (!conf.names.includes(name)) conf.names.push(name);
-                    }
-                } else phoneMap.set(phone, name);
-            });
-            
-            console.log(`[ANALYZE] File stats: validPhones=${fileValidPhones}, skipped=${fileSkipped}`);
-            if (skippedExamples.length > 0) {
-                console.log(`[ANALYZE] Skipped examples:`, skippedExamples);
+                
+                await pool.query(
+                    `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '{}')`,
+                    [groupId, name, phone, phone, row.Email || '', file.id, file.original_name, JSON.stringify(row.OriginalData || {})]
+                );
+                
+                existingPhones.set(phone, true);
+                added++;
             }
-            totalValidPhones += fileValidPhones;
-            totalSkippedNoPhone += fileSkipped;
+            
+            await pool.query("UPDATE uploaded_files SET status = 'processed' WHERE id = $1", [file.id]);
         }
-
-        console.log(`[ANALYZE] TOTAL: parsed=${totalParsed}, validPhones=${totalValidPhones}, skipped=${totalSkippedNoPhone}`);
-        console.log(`[ANALYZE] Unique phones in map: ${phoneMap.size}`);
-        console.log(`[ANALYZE] Conflicts: ${conflicts.length}, AutoResolved: ${autoResolved.length}`);
-
-        responseData = { 
-            conflicts, 
-            autoResolved, 
-            allData: Array.from(phoneMap.entries()).map(([p, name]) => ({phone: p, name})),
-            fileIds: processingData.map(d => d.fileId),
-            targetGroupName: targetGroupName || 'ייבוא חדש'
-        };
-
-        const g = await pool.query("INSERT INTO contact_groups (name, status, draft_data) VALUES ($1, 'draft', $2) RETURNING id", [responseData.targetGroupName, JSON.stringify(responseData)]);
-        responseData.groupId = g.rows[0].id;
+        
+        // עדכן גרסה
+        await pool.query('UPDATE contact_groups SET version = $2 WHERE id = $1', [groupId, newVersion + 1]);
+        
+        res.json({ success: true, added, skipped, duplicates });
+    } catch (err) {
+        console.error('[ADD-FILES] Error:', err);
+        res.status(500).json({ error: err.message });
     }
-    res.json({ ...responseData, groupId: responseData.groupId || groupId });
 });
 
-app.post('/api/resolve', auth, async (req, res) => {
-    const { phone, name } = req.body;
-    await pool.query('INSERT INTO import_resolutions (phone, resolved_name) VALUES ($1, $2) ON CONFLICT (phone) DO UPDATE SET resolved_name = $2', [phone, name]);
-    res.json({ success: true });
-});
-
-app.post('/api/finalize', auth, async (req, res) => {
-    const { groupId, groupName, contacts, fileIds } = req.body;
-    const resolutions = await pool.query('SELECT phone, resolved_name FROM import_resolutions');
-    const resMap = new Map(resolutions.rows.map(r => [r.phone, r.resolved_name]));
-
-    const finalContacts = [];
-    const nameUsedRegistry = new Map();
-
-    contacts.forEach(c => {
-        let name = resMap.get(c.phone) || c.name;
-        if (nameUsedRegistry.has(name)) {
-            let count = nameUsedRegistry.get(name) + 1;
-            nameUsedRegistry.set(name, count);
-            name = `${name} (${count})`;
-        } else { nameUsedRegistry.set(name, 1); }
-        finalContacts.push({ phone: c.phone, name: name });
-    });
-
-    await pool.query("UPDATE contact_groups SET name = $1, status = 'ready', draft_data = NULL WHERE id = $2", [groupName, groupId]);
-    let batch = [];
-    for (const c of finalContacts) {
-        batch.push([groupId, c.name, c.phone, '{}']);
-        if (batch.length >= 2000) {
-            await pool.query('INSERT INTO contacts (group_id, full_name, phone, metadata) SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::jsonb[])', [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3])]);
-            batch = [];
-        }
-    }
-    if (batch.length > 0) await pool.query('INSERT INTO contacts (group_id, full_name, phone, metadata) SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::jsonb[])', [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3])]);
-    if (fileIds && fileIds.length > 0) await pool.query("UPDATE uploaded_files SET status = 'processed' WHERE id = ANY($1)", [fileIds]);
-    await pool.query("TRUNCATE TABLE import_resolutions");
-    res.json({ success: true });
-});
-
-app.get('/api/groups', auth, async (req, res) => {
-    const r = await pool.query(`
-        SELECT g.*, 
-        CASE 
-            WHEN g.status = 'draft' THEN jsonb_array_length(g.draft_data->'allData')
-            ELSE (SELECT count(*) FROM contacts WHERE group_id = g.id) 
-        END as count 
-        FROM contact_groups g 
-        ORDER BY CASE WHEN g.status = 'draft' THEN 0 ELSE 1 END, g.id DESC
-    `);
-    res.json(r.rows);
-});
-
-app.get('/api/groups/:id/contacts', auth, async (req, res) => {
-    const r = await pool.query('SELECT full_name, phone FROM contacts WHERE group_id = $1 ORDER BY full_name ASC', [req.params.id]);
-    res.json(r.rows);
-});
-
-app.delete('/api/groups/:id', auth, async (req, res) => {
-    await pool.query('DELETE FROM contact_groups WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
-});
-
-app.delete('/api/files/:id', auth, async (req, res) => {
-    const fRes = await pool.query('DELETE FROM uploaded_files WHERE id = $1 RETURNING file_path', [req.params.id]);
-    if (fRes.rows[0] && fs.existsSync(fRes.rows[0].file_path)) fs.unlinkSync(fRes.rows[0].file_path);
-    res.json({ success: true });
-});
+// ==================== EXPORT ====================
 
 app.get('/api/export/:type/:id', auth, async (req, res) => {
-    const r = await pool.query('SELECT full_name, phone FROM contacts WHERE group_id = $1', [req.params.id]);
-    let out = (req.params.type === 'csv') ? "Name,Phone\n" : "";
-    r.rows.forEach(c => {
-        if (req.params.type === 'csv') out += `"${c.full_name}","${c.phone}"\n`;
-        else out += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\nTEL;TYPE=CELL:${c.phone}\nEND:VCARD\n`;
-    });
-    res.setHeader('Content-Type', req.params.type === 'csv' ? 'text/csv' : 'text/vcard');
-    res.setHeader('Content-Disposition', `attachment; filename=contacts.${req.params.type}`);
-    res.send(out);
+    try {
+        const r = await pool.query('SELECT full_name, phone, email FROM contacts WHERE group_id = $1', [req.params.id]);
+        const g = await pool.query('SELECT name FROM contact_groups WHERE id = $1', [req.params.id]);
+        const groupName = g.rows[0]?.name || 'contacts';
+        
+        let out = '';
+        if (req.params.type === 'csv') {
+            out = "Name,Phone,Email\n";
+            r.rows.forEach(c => {
+                out += `"${c.full_name}","${c.phone}","${c.email || ''}"\n`;
+            });
+        } else {
+            r.rows.forEach(c => {
+                out += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\nTEL;TYPE=CELL:${c.phone}\n`;
+                if (c.email) out += `EMAIL:${c.email}\n`;
+                out += `END:VCARD\n`;
+            });
+        }
+        
+        res.setHeader('Content-Type', req.params.type === 'csv' ? 'text/csv; charset=utf-8' : 'text/vcard; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${groupName}.${req.params.type}"`);
+        res.send('\ufeff' + out); // BOM for Excel
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// בדיקת בריאות ופרסר
+// ==================== STATS & DASHBOARD ====================
+
+app.get('/api/dashboard-stats', auth, async (req, res) => {
+    try {
+        const groups = await pool.query("SELECT count(*) as total, count(*) FILTER (WHERE status = 'ready') as ready, count(*) FILTER (WHERE status = 'draft') as draft FROM contact_groups");
+        const contacts = await pool.query("SELECT count(*) as total FROM contacts");
+        const files = await pool.query("SELECT count(*) as total, count(*) FILTER (WHERE status = 'pending') as pending FROM uploaded_files");
+        
+        res.json({
+            groups: groups.rows[0],
+            contacts: contacts.rows[0],
+            files: files.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== HEALTH & TEST ====================
+
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// בדיקת פרסר VCF על קובץ קיים
 app.get('/api/test-parse/:fileId', auth, async (req, res) => {
     try {
         const fileRes = await pool.query('SELECT * FROM uploaded_files WHERE id = $1', [req.params.fileId]);
@@ -436,7 +815,18 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
         const actualVcards = (content.match(/BEGIN:VCARD/gi) || []).length;
         
         const parsed = parseVcf(content);
-        const validPhones = parsed.filter(c => normalizePhone(c.Phone)).length;
+        let validPhones = 0, rejectedPhones = 0;
+        const rejectionReasons = {};
+        
+        parsed.forEach(c => {
+            const result = normalizePhone(c.Phone);
+            if (result.normalized) {
+                validPhones++;
+            } else {
+                rejectedPhones++;
+                rejectionReasons[result.reason] = (rejectionReasons[result.reason] || 0) + 1;
+            }
+        });
         
         res.json({
             fileName: file.original_name,
@@ -444,6 +834,8 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
             actualVcards,
             parsedContacts: parsed.length,
             validPhones,
+            rejectedPhones,
+            rejectionReasons,
             sample: parsed.slice(0, 10)
         });
     } catch (err) {
@@ -451,6 +843,9 @@ app.get('/api/test-parse/:fileId', auth, async (req, res) => {
     }
 });
 
+// ==================== START SERVER ====================
+
 app.listen(3377, () => {
     console.log('[VCF Server] Running on port 3377');
+    console.log('[VCF Server] Database:', process.env.DB_HOST || '127.0.0.1', ':', process.env.DB_PORT || 3378);
 });
