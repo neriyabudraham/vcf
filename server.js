@@ -1155,14 +1155,13 @@ app.delete('/api/groups/:id', auth, async (req, res) => {
         const groupId = req.params.id;
         console.log(`[DELETE] Deleting group ${groupId}`);
         
-        // מחק הפניות parent_version_id
-        await pool.query('UPDATE contact_groups SET parent_version_id = NULL WHERE parent_version_id = $1', [groupId]);
-        
         // מחק גרסאות
         await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
         
-        // מחק אנשי קשר שנדחו
-        await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
+        // מחק אנשי קשר שנדחו (אם הטבלה קיימת)
+        try {
+            await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
+        } catch (e) { /* טבלה לא קיימת - התעלם */ }
         
         // מחק אנשי קשר
         await pool.query('DELETE FROM contacts WHERE group_id = $1', [groupId]);
