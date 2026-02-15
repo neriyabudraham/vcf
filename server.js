@@ -422,7 +422,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                     rejectionReasons: {} 
                 };
                 
-                rows.forEach(row => {
+                for (const row of rows) {
                     const rawPhone = row[item.mapping.phoneField];
                     const phoneResult = normalizePhone(rawPhone);
                     
@@ -440,7 +440,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                             sourceFileId: file.id,
                             originalData: row.OriginalData || {}
                         });
-                        return;
+                        continue;
                     }
                     
                     const phone = phoneResult.normalized;
@@ -507,7 +507,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                         phoneMap.set(phone, contactData);
                         fileStats.valid++;
                     }
-                });
+                }
                 
                 totalStats.totalParsed += fileStats.total;
                 totalStats.totalValid += fileStats.valid;
