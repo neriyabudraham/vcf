@@ -51,9 +51,16 @@ const cleanName = (name) => {
 const normalizePhone = (p) => {
     if(!p) return null;
     let c = p.toString().replace(/\D/g, '');
+    if(!c || c.length < 7) return null; // מינימום 7 ספרות (כולל קידומת)
+    
+    // נרמול מספרים ישראליים
     if(c.startsWith('05')) c = '972' + c.substring(1);
-    else if(c.length === 9 && c.startsWith('5')) c = '972' + c;
-    return (c.length >= 9 && c.length <= 15) ? c : null;
+    else if(c.startsWith('5') && c.length === 9) c = '972' + c;
+    else if(c.startsWith('9725') && c.length === 12) { /* כבר מנורמל */ }
+    else if(c.startsWith('00972')) c = '972' + c.substring(5);
+    else if(c.startsWith('+972')) c = '972' + c.substring(4);
+    
+    return (c.length >= 7 && c.length <= 15) ? c : null;
 };
 
 function parseVcf(content) {
@@ -274,6 +281,7 @@ app.post('/api/analyze', auth, async (req, res) => {
 
             let fileValidPhones = 0;
             let fileSkipped = 0;
+            let skippedExamples = [];
             
             rows.forEach(row => {
                 const rawPhone = row[item.mapping.phoneField];
@@ -281,6 +289,10 @@ app.post('/api/analyze', auth, async (req, res) => {
                 
                 if (!phone) {
                     fileSkipped++;
+                    // שמור דוגמאות למספרים שנדחו
+                    if (skippedExamples.length < 10) {
+                        skippedExamples.push({ name: row[item.mapping.nameFields?.[0]] || '', phone: rawPhone || '(ריק)' });
+                    }
                     return;
                 }
                 
@@ -303,6 +315,9 @@ app.post('/api/analyze', auth, async (req, res) => {
             });
             
             console.log(`[ANALYZE] File stats: validPhones=${fileValidPhones}, skipped=${fileSkipped}`);
+            if (skippedExamples.length > 0) {
+                console.log(`[ANALYZE] Skipped examples:`, skippedExamples);
+            }
             totalValidPhones += fileValidPhones;
             totalSkippedNoPhone += fileSkipped;
         }
