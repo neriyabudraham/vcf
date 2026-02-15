@@ -166,16 +166,26 @@
                 itemEl.classList.add('ring-2', 'ring-indigo-300');
                 
                 try {
-                    const uploadedFile = await uploadFileWithProgress(file, (percent) => {
-                        progressBar.style.width = percent + '%';
-                        percentEl.innerText = percent + '%';
-                        // עדכון progress כללי
-                        const overallPercent = Math.round(((completedFiles + percent/100) / totalFiles) * 100);
-                        globalProgress.style.width = overallPercent + '%';
-                        totalPercent.innerText = overallPercent + '%';
-                    });
+                    const uploadedFile = await uploadFileWithProgress(file, 
+                        // onProgress - התקדמות העלאה
+                        (percent) => {
+                            progressBar.style.width = percent + '%';
+                            percentEl.innerText = percent + '%';
+                            const overallPercent = Math.round(((completedFiles + percent/100) / totalFiles) * 100);
+                            globalProgress.style.width = overallPercent + '%';
+                            totalPercent.innerText = overallPercent + '%';
+                        },
+                        // onProcessing - השרת מעבד את הקובץ
+                        () => {
+                            statusEl.innerText = '⏳ מעבד אנשי קשר...';
+                            statusEl.className = 'text-xs font-bold text-amber-600';
+                            progressBar.classList.remove('bg-indigo-500');
+                            progressBar.classList.add('bg-amber-500', 'animate-pulse');
+                        }
+                    );
                     
                     // הצלחה
+                    progressBar.classList.remove('bg-amber-500', 'animate-pulse');
                     completedFiles++;
                     progressBar.style.width = '100%';
                     progressBar.classList.remove('bg-indigo-500');
@@ -221,7 +231,7 @@
             }, 2000);
         }
         
-        function uploadFileWithProgress(file, onProgress) {
+        function uploadFileWithProgress(file, onProgress, onProcessing) {
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 const fd = new FormData();
@@ -232,6 +242,11 @@
                         const percent = Math.round((e.loaded / e.total) * 100);
                         onProgress(percent);
                     }
+                });
+                
+                // כשההעלאה מסתיימת, השרת מתחיל לעבד
+                xhr.upload.addEventListener('load', () => {
+                    onProcessing();
                 });
                 
                 xhr.addEventListener('load', () => {
