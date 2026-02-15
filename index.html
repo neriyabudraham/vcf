@@ -554,29 +554,21 @@
         }
 
         async function clearContactName(id) {
-            const result = await Swal.fire({
-                title: 'מחיקת שם',
-                text: 'איש הקשר יקבל שם אוטומטי לפי המספר שלו',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonText: 'מחק שם',
-                cancelButtonText: 'ביטול'
-            });
-            
-            if (result.isConfirmed) {
-                // קבל את 4 הספרות האחרונות של הטלפון
+            try {
+                const data = await api(`/api/contacts/${id}/clear`, { method: 'POST' });
+                
+                // עדכן את השדה בטבלה
                 const row = document.getElementById(`contact-row-${id}`);
-                const phone = row?.querySelector('td:nth-child(2)')?.textContent || '';
-                const defaultName = `איש קשר ${phone.slice(-4)}`;
+                const input = row?.querySelector('input[type="text"]');
+                if (input) input.value = data.newName;
                 
-                await api(`/api/contacts/${id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ full_name: defaultName })
+                Toast.fire({ 
+                    icon: 'success', 
+                    title: 'השם הוחלף',
+                    text: data.addedToBlacklist ? `"${data.addedToBlacklist}" נוסף לרשימה שחורה` : ''
                 });
-                
-                Toast.fire({ icon: 'success', title: 'השם הוחלף לברירת מחדל' });
-                loadContacts();
+            } catch (err) {
+                Toast.fire({ icon: 'error', title: 'שגיאה' });
             }
         }
 

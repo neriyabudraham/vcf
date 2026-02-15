@@ -1081,6 +1081,41 @@ app.post('/api/public/fix-duplicates/:token', async (req, res) => {
     }
 });
 
+// API ציבורי - מחיקת שם והוספה לרשימה שחורה
+app.post('/api/public/clear-name/:token/:contactId', async (req, res) => {
+    try {
+        // וודא שאיש הקשר שייך לקבוצה עם הטוקן הזה
+        const verify = await pool.query(`
+            SELECT c.id, c.full_name, c.phone FROM contacts c 
+            JOIN contact_groups g ON c.group_id = g.id 
+            WHERE g.share_token = $1 AND c.id = $2
+        `, [req.params.token, req.params.contactId]);
+        
+        if (!verify.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        const oldName = verify.rows[0].full_name;
+        const phone = verify.rows[0].phone || '';
+        const defaultName = `איש קשר ${phone.slice(-4)}`;
+        
+        // עדכן את השם לדיפולטיבי
+        await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [defaultName, req.params.contactId]);
+        
+        // הוסף את השם הישן לרשימה השחורה (אם לא ריק ולא כבר קיים)
+        if (oldName && oldName.trim() && !oldName.startsWith('איש קשר')) {
+            await pool.query(
+                'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [oldName.trim(), 'exact']
+            );
+            // אפס קאש
+            invalidNamesCache = null;
+        }
+        
+        res.json({ success: true, newName: defaultName, addedToBlacklist: oldName });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API ציבורי - ייצוא VCF
 app.get('/api/public/export/:token', async (req, res) => {
     try {
@@ -1116,6 +1151,34 @@ app.put('/api/contacts/:id', auth, async (req, res) => {
         
         await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [full_name.trim(), req.params.id]);
         res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// מחיקת שם והוספה לרשימה שחורה
+app.post('/api/contacts/:id/clear', auth, async (req, res) => {
+    try {
+        const contact = await pool.query('SELECT full_name, phone FROM contacts WHERE id = $1', [req.params.id]);
+        if (!contact.rows[0]) return res.status(404).json({ error: 'Not found' });
+        
+        const oldName = contact.rows[0].full_name;
+        const phone = contact.rows[0].phone || '';
+        const defaultName = `איש קשר ${phone.slice(-4)}`;
+        
+        // עדכן את השם
+        await pool.query('UPDATE contacts SET full_name = $1 WHERE id = $2', [defaultName, req.params.id]);
+        
+        // הוסף לרשימה שחורה
+        if (oldName && oldName.trim() && !oldName.startsWith('איש קשר')) {
+            await pool.query(
+                'INSERT INTO invalid_names (name, pattern_type) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [oldName.trim(), 'exact']
+            );
+            invalidNamesCache = null;
+        }
+        
+        res.json({ success: true, newName: defaultName, addedToBlacklist: oldName });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -47,6 +47,7 @@
                             <th class="px-4 py-3 text-right font-semibold">שם</th>
                             <th class="px-4 py-3 text-right font-semibold">טלפון</th>
                             <th class="px-4 py-3 text-right font-semibold">אימייל</th>
+                            <th class="px-4 py-3 text-center font-semibold w-16"></th>
                         </tr>
                     </thead>
                     <tbody id="contactsBody"></tbody>
@@ -90,19 +91,22 @@
             document.getElementById('contactsCount').textContent = `מציג ${contacts.length.toLocaleString()} אנשי קשר`;
             
             document.getElementById('contactsBody').innerHTML = contacts.map((c, i) => `
-                <tr class="border-b border-slate-100">
+                <tr class="border-b border-slate-100" id="row-${c.id}">
                     <td class="px-4 py-2 text-slate-400">${i + 1}</td>
                     <td class="px-4 py-1">
                         <input type="text" value="${(c.full_name || '').replace(/"/g, '&quot;')}" 
-                               data-id="${c.id}"
+                               id="name-${c.id}"
                                class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none font-medium bg-transparent"
                                onchange="updateName(${c.id}, this.value)"
                                onkeydown="if(event.key==='Enter') this.blur()">
                     </td>
                     <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
                     <td class="px-4 py-2 text-slate-500">${c.email || '-'}</td>
+                    <td class="px-4 py-2 text-center">
+                        <button onclick="clearName(${c.id})" class="text-red-400 hover:text-red-600 text-lg" title="מחק שם והוסף לרשימה שחורה">🗑️</button>
+                    </td>
                 </tr>
-            `).join('') || '<tr><td colspan="4" class="text-center py-8 text-slate-400">אין אנשי קשר</td></tr>';
+            `).join('') || '<tr><td colspan="5" class="text-center py-8 text-slate-400">אין אנשי קשר</td></tr>';
         }
         
         function filterContacts() {
@@ -138,6 +142,31 @@
             }
         }
         
+        async function clearName(id) {
+            try {
+                const res = await fetch(`/api/public/clear-name/${token}/${id}`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    // עדכן את השדה בטבלה
+                    const input = document.getElementById(`name-${id}`);
+                    if (input) input.value = data.newName;
+                    
+                    // עדכן במערך
+                    const contact = allContacts.find(c => c.id === id);
+                    if (contact) contact.full_name = data.newName;
+                    
+                    Toast.fire({ 
+                        icon: 'success', 
+                        title: 'השם הוחלף',
+                        text: data.addedToBlacklist ? `"${data.addedToBlacklist}" נוסף לרשימה שחורה` : ''
+                    });
+                }
+            } catch (err) {
+                Toast.fire({ icon: 'error', title: 'שגיאה' });
+            }
+        }
+
         async function checkDuplicates() {
             const res = await fetch(`/api/public/duplicates/${token}`);
             const data = await res.json();
