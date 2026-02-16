@@ -353,6 +353,16 @@
                         <span>אורך מקסימלי:</span>
                         <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
                     </div>
+                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl col-span-2 md:col-span-3">
+                        <span>פורמט מספור כפילויות:</span>
+                        <select id="rule-duplicateSuffix" class="px-3 py-2 rounded-lg border border-slate-200">
+                            <option value="({n})">אילה (1), אילה (2)</option>
+                            <option value="- {n}">אילה - 1, אילה - 2</option>
+                            <option value="_{n}">אילה_1, אילה_2</option>
+                            <option value="{n}">אילה 1, אילה 2</option>
+                        </select>
+                        <span class="text-xs text-slate-400">(כאשר יש שמות זהים)</span>
+                    </div>
                 </div>
                 
                 <p class="text-sm text-slate-500 mt-2">💡 אורך מינימלי סופר רק אותיות (עברית/אנגלית), לא נקודות, גרשיים או אימוג'ים</p>
@@ -544,35 +554,47 @@
             
             // אם יש טיוטה פתוחה, החל את ההגדרות מיידית
             if (state.analysisData && state.currentGroupId) {
-                Toast.fire({ icon: 'info', title: 'מחיל הגדרות על הטיוטה...' });
+                closeSettingsModal();
+                
+                // הצג טעינה
+                Swal.fire({
+                    title: '⏳ מחיל הגדרות...',
+                    html: '<p>מעבד מחדש את אנשי הקשר בהתאם להגדרות החדשות</p>',
+                    allowOutsideClick: false,
+                    showConfirmButton: false,
+                    didOpen: () => Swal.showLoading()
+                });
                 
                 // טען מחדש את הטיוטה עם ההגדרות החדשות
                 await reloadDraftWithNewSettings();
+                
+                Swal.fire({ icon: 'success', title: 'ההגדרות הוחלו!', timer: 1500 });
+            } else {
+                closeSettingsModal();
+                Toast.fire({ icon: 'success', title: 'ההגדרות נשמרו' });
             }
-            
-            closeSettingsModal();
-            Toast.fire({ icon: 'success', title: 'ההגדרות נשמרו והוחלו' });
         }
         
         async function reloadDraftWithNewSettings() {
             if (!state.analysisData || !state.currentGroupId) return;
             
             try {
-                // שלח בקשה לעיבוד מחדש של הטיוטה עם ההגדרות החדשות
+                // שלח בקשה לטעינה מחדש של הטיוטה עם ההגדרות החדשות
                 const data = await api('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        fileIds: state.analysisData.stats?.fileIds || [],
-                        draftId: state.currentGroupId,
-                        forceReprocess: true
+                        groupId: state.currentGroupId
                     })
                 });
                 
                 state.analysisData = data;
+                state.currentGroupId = data.groupId;
+                renderStats();
                 showAnalysisTab('accepted');
             } catch (err) {
                 console.error('Error reloading draft:', err);
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
             }
         }
 
@@ -2302,6 +2324,7 @@
                 document.getElementById('rule-preferNoNumbers').checked = rules.preferNoNumbers !== false;
                 document.getElementById('rule-minLength').value = rules.minLength || 2;
                 document.getElementById('rule-maxLength').value = rules.maxLength || 20;
+                document.getElementById('rule-duplicateSuffix').value = rules.duplicateSuffix || '({n})';
                 
                 // טען שמות לא תקינים
                 await loadInvalidNames();
@@ -2321,6 +2344,7 @@
                 preferNoNumbers: document.getElementById('rule-preferNoNumbers').checked,
                 minLength: parseInt(document.getElementById('rule-minLength').value) || 2,
                 maxLength: parseInt(document.getElementById('rule-maxLength').value) || 20,
+                duplicateSuffix: document.getElementById('rule-duplicateSuffix').value || '({n})',
                 allowedChars: ["'", '"', "-", " "]
             };
             

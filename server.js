@@ -374,8 +374,8 @@ async function chooseBestName(names) {
     return bestName;
 }
 
-// יצירת שם ייחודי עם (X) אם צריך
-function makeUniqueName(name, existingNames, phone = '') {
+// יצירת שם ייחודי עם סיומת מספור
+async function makeUniqueName(name, existingNames, phone = '') {
     if (!name) return name;
     let baseName = getBaseName(name);
     
@@ -389,11 +389,17 @@ function makeUniqueName(name, existingNames, phone = '') {
         return baseName;
     }
     
-    let counter = 2;
-    while (existingNames.has(`${baseName} (${counter})`.toLowerCase())) {
+    // קבל את פורמט הסיומת מההגדרות
+    const rules = await loadNameRules();
+    const suffixFormat = rules.duplicateSuffix || '({n})'; // ברירת מחדל: (1), (2), (3)...
+    
+    let counter = 1;
+    let uniqueName;
+    do {
+        uniqueName = `${baseName} ${suffixFormat.replace('{n}', counter)}`;
         counter++;
-    }
-    const uniqueName = `${baseName} (${counter})`;
+    } while (existingNames.has(uniqueName.toLowerCase()));
+    
     existingNames.add(uniqueName.toLowerCase());
     return uniqueName;
 }
@@ -839,6 +845,12 @@ app.post('/api/analyze', auth, async (req, res) => {
             // הסר קונפליקטים עם שם אחד בלבד (אחרי סינון שמות דיפולטיביים)
             responseData.conflicts = (responseData.conflicts || []).filter(c => c.names.length > 1);
             
+            // וודא שמות ייחודיים
+            const usedNames = new Set();
+            for (const contact of responseData.allData || []) {
+                contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
+            }
+            
             console.log('[ANALYZE] Re-applied cleaning rules to draft');
         } else {
             // עיבוד חדש
@@ -1006,11 +1018,18 @@ app.post('/api/analyze', auth, async (req, res) => {
 
             console.log(`[ANALYZE] Total stats:`, totalStats);
 
+            // וודא שמות ייחודיים
+            const allData = Array.from(phoneMap.values());
+            const usedNames = new Set();
+            for (const contact of allData) {
+                contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
+            }
+
             responseData = { 
                 conflicts, 
                 autoResolved, 
                 rejectedContacts,
-                allData: Array.from(phoneMap.values()),
+                allData,
                 stats: totalStats,
                 fileIds: processingData.map(d => d.fileId),
                 targetGroupName: targetGroupName || 'ייבוא חדש'
@@ -1097,8 +1116,8 @@ app.post('/api/finalize', auth, async (req, res) => {
                     : `איש קשר ${c.phone.slice(-4)}`;
             }
             
-            // וודא שם ייחודי עם (X) אם צריך
-            name = makeUniqueName(name, usedNames, c.phone);
+            // וודא שם ייחודי עם סיומת אם צריך
+            name = await makeUniqueName(name, usedNames, c.phone);
             
             finalContacts.push({ 
                 phone: c.phone, 
@@ -2074,7 +2093,7 @@ app.post('/api/public/finalize/:token', async (req, res) => {
                     : `איש קשר ${c.phone.slice(-4)}`;
             }
             
-            name = makeUniqueName(name, usedNames, c.phone);
+            name = await makeUniqueName(name, usedNames, c.phone);
             
             finalContacts.push({ 
                 phone: c.phone, 
