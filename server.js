@@ -1637,9 +1637,9 @@ app.post('/api/groups/:id/revert-to-draft', auth, async (req, res) => {
         const contacts = contactsRes.rows;
         console.log(`[REVERT] Found ${contacts.length} contacts`);
         
-        // בניית מבנה הטיוטה
-        const allData = contacts.map(c => ({
-            name: c.full_name,
+        // בניית מבנה הטיוטה - עם תיקון שמות
+        let allData = contacts.map(c => ({
+            name: getBaseName(c.full_name) || c.full_name, // הסר סיומות כפולות
             phone: c.phone_normalized || c.phone,
             phoneRaw: c.phone,
             email: c.email || '',
@@ -1647,6 +1647,21 @@ app.post('/api/groups/:id/revert-to-draft', auth, async (req, res) => {
             sourceFileId: c.source_file_id,
             originalData: c.original_data || {}
         }));
+        
+        // מיין לפי אורך טלפון - מספרים ארוכים קודם
+        allData.sort((a, b) => {
+            const aLen = (a.phone || '').length;
+            const bLen = (b.phone || '').length;
+            return bLen - aLen;
+        });
+        
+        // וודא שמות ייחודיים
+        const usedNames = new Set();
+        for (const contact of allData) {
+            contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
+        }
+        
+        console.log(`[REVERT] Fixed names for ${allData.length} contacts`);
         
         const draftData = {
             allData,
