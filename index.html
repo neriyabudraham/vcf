@@ -1594,9 +1594,23 @@
             state.mergeSelectedIndexes = [index];
             state.mergePhoneLabels = { [contact.phone]: contact.originalData?.PhoneType || 'נייד' };
             
+            // אם יש כבר מספרים מאוחדים - טען אותם
+            if (contact.mergedPhones && contact.mergedPhones.length > 1) {
+                // טען את המספרים הקיימים כ"מספרים וירטואליים" לעריכה
+                state.mergedPhonesEdit = contact.mergedPhones.map(p => ({ ...p }));
+                state.mergePhoneLabels = {};
+                contact.mergedPhones.forEach(p => {
+                    state.mergePhoneLabels[p.phone] = p.label || 'נייד';
+                });
+            } else {
+                state.mergedPhonesEdit = null;
+            }
+            
             // הצג פרטי איש הקשר הנוכחי
             document.getElementById('mergeCurrentName').textContent = contact.name || '(ללא שם)';
-            document.getElementById('mergeCurrentPhone').textContent = contact.phone;
+            document.getElementById('mergeCurrentPhone').textContent = contact.mergedPhones?.length > 1 
+                ? `${contact.mergedPhones.length} מספרים מאוחדים` 
+                : contact.phone;
             
             // הצג מספרים שנבחרו
             renderMergeSelected();
@@ -1617,16 +1631,55 @@
             state.mergeSourceIndex = null;
             state.mergeSelectedIndexes = [];
             state.mergePhoneLabels = {};
+            state.mergedPhonesEdit = null;
         }
         
         function renderMergeSelected() {
             const container = document.getElementById('mergeSelectedContacts');
             const nameOptions = document.getElementById('mergeNameOptions');
-            const contacts = state.mergeSelectedIndexes.map(i => state.analysisData.allData[i]).filter(Boolean);
             
             // תוויות ברירת מחדל + מותאמות אישית
             const defaultLabels = ['נייד', 'עבודה', 'בית'];
             const allLabels = [...defaultLabels, ...state.customPhoneLabels.filter(l => !defaultLabels.includes(l)), 'אחר'];
+            
+            // אם יש מספרים מאוחדים קיימים - הצג אותם
+            if (state.mergedPhonesEdit && state.mergedPhonesEdit.length > 0) {
+                container.innerHTML = state.mergedPhonesEdit.map((p, idx) => {
+                    const currentLabel = p.label || 'נייד';
+                    const isCustomLabel = !allLabels.includes(currentLabel) && currentLabel !== 'אחר';
+                    
+                    return `
+                    <div class="flex items-center gap-2 p-3 bg-white rounded-lg border ${idx === 0 ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200'}">
+                        <div class="flex-1">
+                            <span class="text-sm font-medium text-slate-500">מספר מאוחד</span>
+                        </div>
+                        <span class="font-mono text-slate-600 text-sm">${p.phone}</span>
+                        <select class="px-2 py-1 rounded border border-slate-200 text-sm" 
+                                onchange="handleMergedLabelChange(${idx}, this.value)">
+                            ${allLabels.map(label => `<option value="${label}" ${currentLabel === label || (isCustomLabel && label === 'אחר') ? 'selected' : ''}>${label}</option>`).join('')}
+                            ${isCustomLabel ? `<option value="${currentLabel}" selected>${currentLabel}</option>` : ''}
+                        </select>
+                        <button onclick="removeMergedPhone(${idx})" 
+                                class="text-red-400 hover:text-red-600 px-2 ${state.mergedPhonesEdit.length === 1 ? 'opacity-30 cursor-not-allowed' : ''}"
+                                ${state.mergedPhonesEdit.length === 1 ? 'disabled' : ''}
+                                title="הסר מספר">✕</button>
+                    </div>
+                `}).join('');
+                
+                // הצג את השם הנוכחי כאפשרות
+                const contact = state.analysisData?.allData?.[state.mergeSourceIndex];
+                const currentName = getBaseName(contact?.name) || contact?.name || '';
+                nameOptions.innerHTML = currentName ? `
+                    <button onclick="document.getElementById('mergeFinalName').value = '${currentName.replace(/'/g, "\\'")}'"
+                            class="px-3 py-1 bg-white border rounded-lg hover:bg-indigo-50 hover:border-indigo-300 text-sm">
+                        ${currentName}
+                    </button>
+                ` : '';
+                return;
+            }
+            
+            // מצב רגיל - הצג אנשי קשר שנבחרו
+            const contacts = state.mergeSelectedIndexes.map(i => state.analysisData.allData[i]).filter(Boolean);
             
             // הצג מספרים שנבחרו עם תוויות ואפשרויות עריכה/הסרה
             container.innerHTML = contacts.map((c, idx) => {
@@ -1680,6 +1733,48 @@
                     </button>
                 `).join('');
             }
+        }
+        
+        // פונקציות לעריכת מספרים מאוחדים קיימים
+        function handleMergedLabelChange(idx, value) {
+            if (!state.mergedPhonesEdit || !state.mergedPhonesEdit[idx]) return;
+            
+            if (value === 'אחר') {
+                setTimeout(() => {
+                    Swal.fire({
+                        title: 'הזן תווית מותאמת',
+                        input: 'text',
+                        inputPlaceholder: 'למשל: פקס, משרד, וכו...',
+                        showCancelButton: true,
+                        confirmButtonText: 'שמור',
+                        cancelButtonText: 'ביטול',
+                        inputValidator: (val) => !val && 'הזן שם לתווית'
+                    }).then((result) => {
+                        if (result.isConfirmed && result.value) {
+                            state.mergedPhonesEdit[idx].label = result.value;
+                            if (!state.customPhoneLabels.includes(result.value)) {
+                                state.customPhoneLabels.push(result.value);
+                                localStorage.setItem('customPhoneLabels', JSON.stringify(state.customPhoneLabels));
+                            }
+                            renderMergeSelected();
+                        } else {
+                            renderMergeSelected();
+                        }
+                    });
+                }, 50);
+            } else {
+                state.mergedPhonesEdit[idx].label = value;
+            }
+        }
+        
+        function removeMergedPhone(idx) {
+            if (!state.mergedPhonesEdit || state.mergedPhonesEdit.length <= 1) {
+                Toast.fire({ icon: 'warning', title: 'חייב להישאר לפחות מספר אחד' });
+                return;
+            }
+            
+            state.mergedPhonesEdit.splice(idx, 1);
+            renderMergeSelected();
         }
         
         function handleLabelChange(phone, value) {
@@ -1911,13 +2006,33 @@
         }
         
         function performMerge() {
-            if (state.mergeSelectedIndexes.length < 2) {
-                return Toast.fire({ icon: 'warning', title: 'בחר לפחות 2 אנשי קשר לאיחוד' });
-            }
-            
             const finalName = document.getElementById('mergeFinalName').value.trim();
             if (!finalName) {
                 return Toast.fire({ icon: 'error', title: 'הזן שם לאיש הקשר המאוחד' });
+            }
+            
+            // מצב עריכה של מספרים מאוחדים קיימים
+            if (state.mergedPhonesEdit && state.mergedPhonesEdit.length > 0) {
+                const contact = state.analysisData.allData[state.mergeSourceIndex];
+                contact.name = finalName;
+                contact.mergedPhones = state.mergedPhonesEdit;
+                
+                // אם נשאר רק מספר אחד - הסר את ה-mergedPhones
+                if (state.mergedPhonesEdit.length === 1) {
+                    contact.phone = state.mergedPhonesEdit[0].phone;
+                    contact.mergedPhones = null;
+                }
+                
+                closeMergeModal();
+                scheduleDraftSave();
+                showAnalysisTab('accepted');
+                Toast.fire({ icon: 'success', title: 'המספרים עודכנו' });
+                return;
+            }
+            
+            // מצב איחוד חדש - צריך לפחות 2 אנשי קשר
+            if (state.mergeSelectedIndexes.length < 2) {
+                return Toast.fire({ icon: 'warning', title: 'בחר לפחות 2 אנשי קשר לאיחוד' });
             }
             
             // אסוף את כל המספרים
