@@ -31,6 +31,9 @@ const pool = new Pool({
 // Session store בדאטאבייס - שורד רענון ורסטארט
 app.use(express.json({limit: '350mb'}));
 app.use(express.static(__dirname));
+
+// Favicon - מונע 404
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.use(session({ 
     store: new pgSession({
         pool: pool,
@@ -1877,34 +1880,37 @@ app.post('/api/groups/:id/add-files', auth, async (req, res) => {
 
 app.get('/api/export/:type/:id', auth, async (req, res) => {
     try {
+        console.log(`[EXPORT] Starting export type=${req.params.type} id=${req.params.id}`);
+        
         const r = await pool.query('SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1', [req.params.id]);
+        console.log(`[EXPORT] Found ${r.rows.length} contacts`);
+        
         const g = await pool.query('SELECT name FROM contact_groups WHERE id = $1', [req.params.id]);
-        const groupName = g.rows[0]?.name || 'contacts';
+        const groupName = (g.rows[0]?.name || 'contacts').replace(/[^\w\u0590-\u05FF\s\-]/g, '');
         
         let out = '';
         if (req.params.type === 'csv') {
             out = "Name,Phone,Email\n";
             r.rows.forEach(c => {
-                // בדוק אם יש מספרי טלפון מאוחדים
                 const mergedPhones = c.original_data?.mergedPhones;
                 if (mergedPhones && mergedPhones.length > 1) {
                     mergedPhones.forEach(mp => {
-                        out += `"${c.full_name}","${mp.phone}","${c.email || ''}"\n`;
+                        out += `"${(c.full_name || '').replace(/"/g, '""')}","${mp.phone || ''}","${(c.email || '').replace(/"/g, '""')}"\n`;
                     });
                 } else {
-                    out += `"${c.full_name}","${c.phone}","${c.email || ''}"\n`;
+                    out += `"${(c.full_name || '').replace(/"/g, '""')}","${c.phone || ''}","${(c.email || '').replace(/"/g, '""')}"\n`;
                 }
             });
         } else {
             r.rows.forEach(c => {
-                out += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\n`;
+                const name = (c.full_name || 'Unknown').replace(/\n/g, ' ');
+                out += `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\n`;
                 
-                // בדוק אם יש מספרי טלפון מאוחדים
                 const mergedPhones = c.original_data?.mergedPhones;
                 if (mergedPhones && mergedPhones.length > 1) {
                     mergedPhones.forEach(mp => {
                         const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
-                        out += `TEL;TYPE=${type}:${mp.phone}\n`;
+                        out += `TEL;TYPE=${type}:${mp.phone || ''}\n`;
                     });
                 } else if (c.phone) {
                     out += `TEL;TYPE=CELL:${c.phone}\n`;
@@ -1916,10 +1922,13 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
             });
         }
         
+        console.log(`[EXPORT] Generated output length: ${out.length}`);
+        
         res.setHeader('Content-Type', req.params.type === 'csv' ? 'text/csv; charset=utf-8' : 'text/vcard; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${groupName}.${req.params.type}"`);
-        res.send('\ufeff' + out); // BOM for Excel
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(groupName)}.${req.params.type}"`);
+        res.send('\ufeff' + out);
     } catch (err) {
+        console.error('[EXPORT] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
