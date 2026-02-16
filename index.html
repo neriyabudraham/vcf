@@ -1784,7 +1784,25 @@
                     return { ...c, score, matchType };
                 })
                 .filter(c => c.score > 0)
-                .sort((a, b) => b.score - a.score)
+                .sort((a, b) => {
+                    // סדר עדיפויות לפי סוג התאמה
+                    const typePriority = {
+                        'שם זהה': 1,
+                        'שם דומה': 2,
+                        'מילה משותפת': 3,
+                        'קידומת דומה': 4,
+                        'מספר קרוב': 5
+                    };
+                    
+                    // קבל את העדיפות הגבוהה ביותר מכל ההתאמות
+                    const getPriority = (types) => Math.min(...types.map(t => typePriority[t] || 99));
+                    const aPriority = getPriority(a.matchType);
+                    const bPriority = getPriority(b.matchType);
+                    
+                    // מיין קודם לפי עדיפות סוג, אח"כ לפי ניקוד
+                    if (aPriority !== bPriority) return aPriority - bPriority;
+                    return b.score - a.score;
+                })
                 .slice(0, 40);
             
             container.innerHTML = similar.length ? similar.map(c => `
