@@ -1906,9 +1906,21 @@ app.post('/api/groups/:id/add-files', auth, async (req, res) => {
 
 app.get('/api/export/:type/:id', auth, async (req, res) => {
     try {
-        console.log(`[EXPORT] Starting export type=${req.params.type} id=${req.params.id}`);
+        const { batch, batchSize } = req.query;
+        const batchNum = parseInt(batch) || 0;
+        const size = parseInt(batchSize) || 0;
         
-        const r = await pool.query('SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1', [req.params.id]);
+        console.log(`[EXPORT] Starting export type=${req.params.type} id=${req.params.id} batch=${batchNum} size=${size}`);
+        
+        let query = 'SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1 ORDER BY id';
+        const params = [req.params.id];
+        
+        if (size > 0) {
+            query += ` LIMIT $2 OFFSET $3`;
+            params.push(size, batchNum * size);
+        }
+        
+        const r = await pool.query(query, params);
         console.log(`[EXPORT] Found ${r.rows.length} contacts`);
         
         const g = await pool.query('SELECT name FROM contact_groups WHERE id = $1', [req.params.id]);
@@ -1952,7 +1964,10 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
         
         res.setHeader('Content-Type', req.params.type === 'csv' ? 'text/csv; charset=utf-8' : 'text/vcard; charset=utf-8');
         // RFC 5987 encoding for Hebrew filenames
-        const safeFilename = groupName.replace(/[^\w\u0590-\u05FF\s\-]/g, '').trim() || 'contacts';
+        let safeFilename = groupName.replace(/[^\w\u0590-\u05FF\s\-]/g, '').trim() || 'contacts';
+        if (size > 0) {
+            safeFilename += `_${batchNum + 1}`;
+        }
         res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}.${req.params.type}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}.${req.params.type}`);
         res.send('\ufeff' + out);
     } catch (err) {

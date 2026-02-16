@@ -1047,10 +1047,70 @@
         }
 
         async function exportGroup(type) {
-            try {
-                const response = await fetch(`/api/export/${type}/${state.currentGroupId}`, {
-                    credentials: 'include'
+            // בדוק כמה אנשי קשר יש
+            const groupData = await api(`/api/groups/${state.currentGroupId}`);
+            const totalContacts = groupData.contactsCount || 0;
+            
+            // אם יש הרבה אנשי קשר, הצע הורדה בקבוצות
+            if (totalContacts > 5000) {
+                const { value: choice } = await Swal.fire({
+                    title: 'הורדת אנשי קשר',
+                    html: `
+                        <p class="mb-4">יש ${totalContacts.toLocaleString()} אנשי קשר ברשימה.</p>
+                        <p class="mb-4">איך תרצה להוריד?</p>
+                        <div class="space-y-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="exportChoice" value="all" checked class="w-4 h-4">
+                                <span>הכל בקובץ אחד</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="exportChoice" value="batches" class="w-4 h-4">
+                                <span>בקבוצות</span>
+                            </label>
+                            <div id="batchSizeContainer" class="hidden mr-6">
+                                <label class="block text-sm text-slate-600 mb-1">גודל קבוצה:</label>
+                                <input type="number" id="batchSizeInput" value="10000" min="1000" max="50000" step="1000" 
+                                       class="w-full px-3 py-2 border rounded-lg">
+                            </div>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: 'הורד',
+                    cancelButtonText: 'ביטול',
+                    didOpen: () => {
+                        document.querySelectorAll('input[name="exportChoice"]').forEach(r => {
+                            r.addEventListener('change', (e) => {
+                                document.getElementById('batchSizeContainer').classList.toggle('hidden', e.target.value !== 'batches');
+                            });
+                        });
+                    },
+                    preConfirm: () => {
+                        const choice = document.querySelector('input[name="exportChoice"]:checked').value;
+                        const batchSize = parseInt(document.getElementById('batchSizeInput').value) || 10000;
+                        return { choice, batchSize };
+                    }
                 });
+                
+                if (!choice) return;
+                
+                if (choice.choice === 'batches') {
+                    await downloadInBatches(type, totalContacts, choice.batchSize);
+                    return;
+                }
+            }
+            
+            // הורדה רגילה
+            await downloadFile(type);
+        }
+
+        async function downloadFile(type, batch = null, batchSize = null) {
+            try {
+                let url = `/api/export/${type}/${state.currentGroupId}`;
+                if (batch !== null && batchSize !== null) {
+                    url += `?batch=${batch}&batchSize=${batchSize}`;
+                }
+                
+                const response = await fetch(url, { credentials: 'include' });
                 
                 if (!response.ok) {
                     throw new Error('שגיאה בהורדת הקובץ');
@@ -1060,24 +1120,70 @@
                 const contentDisposition = response.headers.get('Content-Disposition');
                 let filename = `contacts.${type}`;
                 if (contentDisposition) {
-                    const match = contentDisposition.match(/filename="(.+)"/);
-                    if (match) filename = match[1];
+                    const match = contentDisposition.match(/filename="(.+?)"/);
+                    if (match) filename = decodeURIComponent(match[1]);
                 }
                 
-                const url = window.URL.createObjectURL(blob);
+                const blobUrl = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
+                a.href = blobUrl;
                 a.download = filename;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
+                window.URL.revokeObjectURL(blobUrl);
                 
-                Toast.fire({ icon: 'success', title: 'הקובץ הורד בהצלחה' });
+                return true;
             } catch (err) {
                 console.error('Export error:', err);
-                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+                throw err;
             }
+        }
+
+        async function downloadInBatches(type, totalContacts, batchSize) {
+            const totalBatches = Math.ceil(totalContacts / batchSize);
+            
+            const result = await Swal.fire({
+                title: 'הורדה בקבוצות',
+                html: `
+                    <p>סה"כ ${totalBatches} קבצים להורדה</p>
+                    <p class="text-sm text-slate-500">(${batchSize.toLocaleString()} אנשי קשר בכל קובץ)</p>
+                    <div class="mt-4">
+                        <div class="w-full bg-slate-200 rounded-full h-4">
+                            <div id="batchProgress" class="bg-indigo-500 h-4 rounded-full transition-all" style="width: 0%"></div>
+                        </div>
+                        <p id="batchStatus" class="text-sm mt-2">מתחיל הורדה...</p>
+                    </div>
+                `,
+                showConfirmButton: false,
+                showCancelButton: true,
+                cancelButtonText: 'עצור',
+                allowOutsideClick: false,
+                didOpen: async () => {
+                    const progressBar = document.getElementById('batchProgress');
+                    const statusText = document.getElementById('batchStatus');
+                    
+                    for (let i = 0; i < totalBatches; i++) {
+                        statusText.textContent = `מוריד קובץ ${i + 1} מתוך ${totalBatches}...`;
+                        
+                        try {
+                            await downloadFile(type, i, batchSize);
+                            progressBar.style.width = `${((i + 1) / totalBatches) * 100}%`;
+                            
+                            // המתן קצת בין הורדות
+                            if (i < totalBatches - 1) {
+                                await new Promise(r => setTimeout(r, 1000));
+                            }
+                        } catch (err) {
+                            statusText.textContent = `שגיאה בהורדת קובץ ${i + 1}`;
+                            return;
+                        }
+                    }
+                    
+                    statusText.textContent = 'הושלם!';
+                    setTimeout(() => Swal.close(), 1500);
+                }
+            });
         }
 
         async function shareGroup() {
