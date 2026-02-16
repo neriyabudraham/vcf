@@ -120,7 +120,23 @@ const normalizePhone = (p, options = {}) => {
 
 const getBaseName = (name) => {
     if (!name) return '';
-    return name.toString().replace(/\s?\(\d+\)$/g, '').trim();
+    // הסר (X) מהסוף
+    let base = name.toString().replace(/\s?\(\d+\)$/g, '').trim();
+    // הסר מספרים מהסוף (כמו "דוד 13" -> "דוד")
+    base = base.replace(/\s+\d+$/g, '').trim();
+    return base;
+};
+
+// בדיקה אם שם הוא אותו שם בסיסי (דוד = דוד 13 = דוד (2))
+const isSameBaseName = (name1, name2) => {
+    if (!name1 || !name2) return false;
+    return getBaseName(name1).toLowerCase() === getBaseName(name2).toLowerCase();
+};
+
+// בדיקה אם שם מכיל מספר בסוף
+const hasNumberSuffix = (name) => {
+    if (!name) return false;
+    return /\s+\d+$/.test(name.toString().trim()) || /\s*\(\d+\)$/.test(name.toString().trim());
 };
 
 // בדיקה אם שם הוא שם דיפולטיבי (איש קשר XXX, צופה XXX וכו')
@@ -817,25 +833,49 @@ app.post('/api/analyze', auth, async (req, res) => {
                     filteredSources = [sources[lowestIdx]];
                 }
                 
-                // הסר שמות כפולים
+                // הסר שמות כפולים ושמות עם אותו בסיס (דוד, דוד 13 -> דוד)
                 const uniqueNames = [];
                 const uniqueScores = [];
                 const uniqueSources = [];
-                for (let i = 0; i < filteredNames.length; i++) {
-                    if (!uniqueNames.includes(filteredNames[i])) {
-                        uniqueNames.push(filteredNames[i]);
-                        uniqueScores.push(filteredScores[i]);
-                        uniqueSources.push(filteredSources[i]);
-                    }
+                const usedBases = new Set();
+                
+                // מיין לפי עדיפות: שם בלי מספר קודם
+                const sortedIndices = filteredNames.map((n, i) => i).sort((a, b) => {
+                    const aHasNum = hasNumberSuffix(filteredNames[a]);
+                    const bHasNum = hasNumberSuffix(filteredNames[b]);
+                    if (!aHasNum && bHasNum) return -1;
+                    if (aHasNum && !bHasNum) return 1;
+                    return filteredScores[b] - filteredScores[a]; // מיין לפי ניקוד
+                });
+                
+                for (const i of sortedIndices) {
+                    const base = getBaseName(filteredNames[i]).toLowerCase();
+                    // אם כבר יש שם עם אותו בסיס - דלג
+                    if (usedBases.has(base)) continue;
+                    
+                    usedBases.add(base);
+                    uniqueNames.push(filteredNames[i]);
+                    uniqueScores.push(filteredScores[i]);
+                    uniqueSources.push(filteredSources[i]);
                 }
                 
                 conflict.names = uniqueNames;
                 conflict.scores = uniqueScores;
                 conflict.sources = uniqueSources;
                 
-                // בחר את השם הטוב ביותר מחדש
-                const maxScoreIdx = uniqueScores.indexOf(Math.max(...uniqueScores));
-                conflict.autoSelected = uniqueNames[maxScoreIdx];
+                // בחר את השם הטוב ביותר (עדיפות לשם בלי מספר)
+                let bestIdx = 0;
+                for (let i = 0; i < uniqueNames.length; i++) {
+                    if (!hasNumberSuffix(uniqueNames[i])) {
+                        bestIdx = i;
+                        break;
+                    }
+                }
+                // אם כולם עם מספרים - בחר לפי ניקוד
+                if (hasNumberSuffix(uniqueNames[bestIdx])) {
+                    bestIdx = uniqueScores.indexOf(Math.max(...uniqueScores));
+                }
+                conflict.autoSelected = uniqueNames[bestIdx];
                 
                 // עדכן גם ב-allData
                 const contact = phoneMap.get(conflict.phone);
@@ -958,12 +998,26 @@ app.post('/api/analyze', auth, async (req, res) => {
                             continue;
                         }
                         
-                        // שניהם שמות אמיתיים
-                        if (getBaseName(existing.name) === getBaseName(name)) {
-                            // שמות דומים - בחר את הטוב יותר לפי כללי הניקוד
-                            const existingScore = await scoreName(existing.name);
-                            const newScore = await scoreName(name);
-                            const bestName = newScore > existingScore ? name : existing.name;
+                        // שניהם שמות אמיתיים - בדוק אם יש להם אותו שם בסיסי
+                        if (isSameBaseName(existing.name, name)) {
+                            // שמות עם אותו בסיס (דוד = דוד 13) - בחר את זה בלי המספר
+                            let bestName;
+                            const existingHasNum = hasNumberSuffix(existing.name);
+                            const newHasNum = hasNumberSuffix(name);
+                            
+                            if (!existingHasNum && newHasNum) {
+                                // הקיים בלי מספר - עדיף
+                                bestName = existing.name;
+                            } else if (existingHasNum && !newHasNum) {
+                                // החדש בלי מספר - עדיף
+                                bestName = name;
+                            } else {
+                                // שניהם עם או בלי מספר - בחר לפי ניקוד
+                                const existingScore = await scoreName(existing.name);
+                                const newScore = await scoreName(name);
+                                bestName = newScore > existingScore ? name : existing.name;
+                            }
+                            
                             existing.name = bestName;
                             if (!autoResolved.find(a => a.phone === phone)) {
                                 autoResolved.push({ phone, name: bestName, allNames: [existing.name, name], count: 2 });
