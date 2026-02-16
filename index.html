@@ -440,7 +440,10 @@
             
             <!-- אנשי קשר שנבחרו לאיחוד -->
             <div class="mb-6">
-                <p class="text-sm text-slate-600 font-semibold mb-2">מספרי טלפון לאיחוד:</p>
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-sm text-slate-600 font-semibold">מספרי טלפון לאיחוד:</p>
+                    <button onclick="manageCustomLabels()" class="text-xs text-slate-400 hover:text-slate-600">⚙️ ניהול תוויות</button>
+                </div>
                 <div id="mergeSelectedContacts" class="space-y-2 max-h-40 overflow-auto"></div>
             </div>
             
@@ -1775,6 +1778,45 @@
             
             state.mergedPhonesEdit.splice(idx, 1);
             renderMergeSelected();
+        }
+        
+        async function manageCustomLabels() {
+            if (state.customPhoneLabels.length === 0) {
+                return Toast.fire({ icon: 'info', title: 'אין תוויות מותאמות' });
+            }
+            
+            const { value: selectedLabels } = await Swal.fire({
+                title: 'ניהול תוויות מותאמות',
+                html: `
+                    <p class="text-sm text-slate-500 mb-4">בחר תוויות למחיקה:</p>
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        ${state.customPhoneLabels.map((label, i) => `
+                            <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer hover:bg-red-100">
+                                <input type="checkbox" value="${i}" class="custom-label-checkbox">
+                                <span>${label}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'מחק נבחרים',
+                confirmButtonColor: '#ef4444',
+                cancelButtonText: 'ביטול',
+                preConfirm: () => {
+                    const checkboxes = document.querySelectorAll('.custom-label-checkbox:checked');
+                    return Array.from(checkboxes).map(cb => parseInt(cb.value));
+                }
+            });
+            
+            if (selectedLabels && selectedLabels.length > 0) {
+                // מחק מהסוף להתחלה כדי לא לשבש אינדקסים
+                selectedLabels.sort((a, b) => b - a).forEach(idx => {
+                    state.customPhoneLabels.splice(idx, 1);
+                });
+                localStorage.setItem('customPhoneLabels', JSON.stringify(state.customPhoneLabels));
+                Toast.fire({ icon: 'success', title: `${selectedLabels.length} תוויות נמחקו` });
+                renderMergeSelected();
+            }
         }
         
         function handleLabelChange(phone, value) {
