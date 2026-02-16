@@ -65,95 +65,59 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
+    <!-- Settings Modal (Simplified for shared users) -->
     <div id="settingsModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
-        <div class="glass-card rounded-3xl p-8 max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto">
+        <div class="glass-card rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-auto">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold">⚙️ הגדרות מערכת</h2>
+                <h2 class="text-2xl font-bold">⚙️ הגדרות</h2>
                 <button onclick="closeSettings()" class="text-3xl text-slate-400 hover:text-slate-600">&times;</button>
             </div>
             
             <!-- כללי בחירת שמות אוטומטית -->
             <div class="mb-8">
-                <h3 class="text-xl font-bold text-slate-700 mb-4">🎯 כללי בחירת שמות אוטומטית</h3>
-                <p class="text-slate-500 mb-4">הגדר כיצד המערכת תבחר אוטומטית את השם הטוב ביותר כשיש כפילויות</p>
+                <h3 class="text-lg font-bold text-slate-700 mb-3">🎯 העדפות בחירת שמות</h3>
+                <p class="text-slate-500 text-sm mb-4">איך המערכת בוחרת שם כשיש כפילויות</p>
                 
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="nameRulesForm">
-                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                        <input type="checkbox" id="rule-preferLonger" checked class="w-5 h-5 accent-indigo-600">
+                <div class="grid grid-cols-2 gap-3" id="nameRulesForm">
+                    <label class="flex items-center gap-2 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 text-sm">
+                        <input type="checkbox" id="rule-preferLonger" checked class="w-4 h-4 accent-indigo-600">
                         <span>העדף שם ארוך יותר</span>
                     </label>
-                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                        <input type="checkbox" id="rule-preferHebrew" checked class="w-5 h-5 accent-indigo-600">
+                    <label class="flex items-center gap-2 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 text-sm">
+                        <input type="checkbox" id="rule-preferHebrew" checked class="w-4 h-4 accent-indigo-600">
                         <span>העדף עברית</span>
                     </label>
-                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                        <input type="checkbox" id="rule-avoidSpecialChars" checked class="w-5 h-5 accent-indigo-600">
+                    <label class="flex items-center gap-2 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 text-sm">
+                        <input type="checkbox" id="rule-avoidSpecialChars" checked class="w-4 h-4 accent-indigo-600">
                         <span>הימנע מסימנים מיוחדים</span>
                     </label>
-                    <label class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                        <input type="checkbox" id="rule-preferNoNumbers" checked class="w-5 h-5 accent-indigo-600">
+                    <label class="flex items-center gap-2 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 text-sm">
+                        <input type="checkbox" id="rule-preferNoNumbers" checked class="w-4 h-4 accent-indigo-600">
                         <span>העדף שמות בלי מספרים</span>
                     </label>
-                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
-                        <span>אורך מינימלי:</span>
-                        <input type="number" id="rule-minLength" value="2" min="0" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
-                        <span class="text-xs text-slate-400">(אותיות בלבד)</span>
-                    </div>
-                    <div class="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
-                        <span>אורך מקסימלי:</span>
-                        <input type="number" id="rule-maxLength" value="20" class="w-20 px-3 py-2 rounded-lg border border-slate-200">
-                    </div>
                 </div>
-                
-                <p class="text-sm text-slate-500 mt-2">💡 אורך מינימלי סופר רק אותיות (עברית/אנגלית), לא נקודות, גרשיים או אימוג'ים</p>
             </div>
             
-            <!-- שמות לא תקינים (Blacklist) -->
-            <div class="mb-8">
-                <h3 class="text-xl font-bold text-slate-700 mb-4">🚫 שמות לא תקינים (Blacklist)</h3>
-                <p class="text-slate-500 mb-4">שמות אלו יוחלפו אוטומטית בשם ברירת מחדל</p>
+            <!-- שמות לא תקינים -->
+            <div class="mb-6">
+                <h3 class="text-lg font-bold text-slate-700 mb-3">🚫 שמות לא רצויים</h3>
+                <p class="text-slate-500 text-sm mb-4">הוסף שמות שיוחלפו אוטומטית בשם ברירת מחדל</p>
                 
-                <div class="flex gap-3 mb-4">
-                    <input type="text" id="newInvalidName" placeholder="הזן שם לא תקין..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200">
-                    <select id="newInvalidPattern" class="px-4 py-3 rounded-xl border border-slate-200">
-                        <option value="exact">התאמה מדויקת</option>
-                        <option value="contains">מכיל</option>
-                        <option value="regex">ביטוי רגולרי</option>
-                    </select>
-                    <button onclick="addInvalidName()" class="px-6 py-3 bg-red-100 text-red-700 rounded-xl font-bold hover:bg-red-200">➕ הוסף</button>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="newInvalidName" placeholder="הזן שם לא רצוי..." class="flex-1 px-4 py-2 rounded-xl border border-slate-200">
+                    <button onclick="addInvalidName()" class="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200">➕ הוסף</button>
                 </div>
                 
-                <div id="invalidNamesList" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-auto"></div>
+                <div id="invalidNamesList" class="flex flex-wrap gap-2 max-h-32 overflow-auto"></div>
             </div>
             
-            <!-- כללי ניקוי שמות -->
-            <div class="mb-8">
-                <h3 class="text-xl font-bold text-slate-700 mb-4">🧹 כללי ניקוי שמות</h3>
-                <p class="text-slate-500 mb-4">כללים אוטומטיים לניקוי וסידור שמות בעת הייבוא</p>
-                
-                <div id="cleaningRulesList" class="space-y-2 mb-4"></div>
-                
-                <div class="border-t border-slate-200 pt-4 mt-4">
-                    <h4 class="font-semibold text-slate-600 mb-3">➕ הוסף כלל חדש</h4>
-                    <div class="flex flex-wrap gap-3">
-                        <select id="newRuleType" class="px-4 py-3 rounded-xl border border-slate-200" onchange="updateRuleInputs()">
-                            <option value="trim_start">הסר מתחילת השם</option>
-                            <option value="trim_end">הסר מסוף השם</option>
-                            <option value="replace">החלף טקסט</option>
-                            <option value="regex">ביטוי רגולרי</option>
-                        </select>
-                        <input type="text" id="newRulePattern" placeholder="תו/טקסט להסרה..." class="px-4 py-3 rounded-xl border border-slate-200 flex-1">
-                        <input type="text" id="newRuleReplacement" placeholder="להחליף ב..." class="px-4 py-3 rounded-xl border border-slate-200 hidden">
-                        <input type="text" id="newRuleDesc" placeholder="תיאור הכלל..." class="px-4 py-3 rounded-xl border border-slate-200 w-48">
-                        <button onclick="addCleaningRule()" class="px-6 py-3 bg-indigo-100 text-indigo-700 rounded-xl font-bold hover:bg-indigo-200">➕ הוסף</button>
-                    </div>
-                </div>
+            <div class="text-xs text-slate-400 mb-4 p-3 bg-slate-50 rounded-xl">
+                💡 טיפ: כללי ניקוי נוספים כבר מוגדרים ברקע ויוחלו אוטומטית על השמות
             </div>
             
             <div class="flex justify-end gap-3 pt-4 border-t border-slate-200">
-                <button onclick="closeSettings()" class="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200">ביטול</button>
-                <button onclick="saveSettings()" class="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">💾 שמור והחל</button>
+                <button onclick="closeSettings()" class="px-5 py-2 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200">סגור</button>
+                <button onclick="saveSettings()" class="px-5 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">💾 שמור והחל</button>
             </div>
         </div>
     </div>
@@ -167,10 +131,14 @@
             currentTab: 'accepted',
             page: 1,
             perPage: 500,
+            sortBy: 'index',
+            sortDir: 'asc',
+            filterSource: '',
             settings: {
                 cleaningRules: [],
                 nameRules: {},
-                invalidNames: []
+                invalidNames: [],
+                userInvalidNames: [] // רק השמות שהמשתמש הוסיף
             }
         };
         
@@ -260,39 +228,92 @@
             const pagination = document.getElementById('pagination');
             
             if (state.currentTab === 'accepted') {
-                const items = state.data.allData || [];
+                let items = [...(state.data.allData || [])];
+                
+                // סינון לפי מקור
+                if (state.filterSource) {
+                    items = items.filter(c => c.sourceFile === state.filterSource);
+                }
+                
+                // מיון
+                if (state.sortBy === 'name') {
+                    items.sort((a, b) => {
+                        const cmp = (a.name || '').localeCompare(b.name || '', 'he');
+                        return state.sortDir === 'asc' ? cmp : -cmp;
+                    });
+                } else if (state.sortBy === 'phone') {
+                    items.sort((a, b) => {
+                        const cmp = (a.phone || '').localeCompare(b.phone || '');
+                        return state.sortDir === 'asc' ? cmp : -cmp;
+                    });
+                }
+                
                 const totalPages = Math.ceil(items.length / state.perPage);
                 const start = (state.page - 1) * state.perPage;
                 const pageItems = items.slice(start, start + state.perPage);
                 
+                // קבל רשימת מקורות ייחודיים
+                const sources = [...new Set((state.data.allData || []).map(c => c.sourceFile).filter(Boolean))];
+                
                 content.innerHTML = `
-                    <p class="text-sm text-slate-500 mb-4">מציג ${start + 1}-${Math.min(start + state.perPage, items.length)} מתוך ${items.length.toLocaleString()} אנשי קשר</p>
+                    <!-- סרגל כלים -->
+                    <div class="flex flex-wrap items-center gap-4 mb-4 pb-4 border-b border-slate-200">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-slate-500">מיין:</span>
+                            <button onclick="setSort('index')" class="px-3 py-1 rounded-lg text-sm ${state.sortBy === 'index' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                                מקורי
+                            </button>
+                            <button onclick="setSort('name')" class="px-3 py-1 rounded-lg text-sm ${state.sortBy === 'name' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                                שם ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '▲' : '▼') : ''}
+                            </button>
+                            <button onclick="setSort('phone')" class="px-3 py-1 rounded-lg text-sm ${state.sortBy === 'phone' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                                טלפון ${state.sortBy === 'phone' ? (state.sortDir === 'asc' ? '▲' : '▼') : ''}
+                            </button>
+                        </div>
+                        ${sources.length > 1 ? `
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm text-slate-500">סנן לפי מקור:</span>
+                                <select onchange="setFilterSource(this.value)" class="px-3 py-1 rounded-lg border border-slate-200 text-sm">
+                                    <option value="">הכל</option>
+                                    ${sources.map(s => `<option value="${s}" ${state.filterSource === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                </select>
+                            </div>
+                        ` : ''}
+                        <span class="text-sm text-slate-400 mr-auto">מציג ${start + 1}-${Math.min(start + state.perPage, items.length)} מתוך ${items.length.toLocaleString()}</span>
+                    </div>
+                    
                     <table class="w-full text-sm">
                         <thead class="bg-slate-50 sticky top-0">
                             <tr>
-                                <th class="px-4 py-2 text-right">#</th>
-                                <th class="px-4 py-2 text-right">שם</th>
-                                <th class="px-4 py-2 text-right">טלפון</th>
+                                <th class="px-4 py-2 text-right cursor-pointer hover:text-indigo-600" onclick="setSort('index')">#</th>
+                                <th class="px-4 py-2 text-right cursor-pointer hover:text-indigo-600" onclick="setSort('name')">
+                                    שם ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '▲' : '▼') : ''}
+                                </th>
+                                <th class="px-4 py-2 text-right cursor-pointer hover:text-indigo-600" onclick="setSort('phone')">
+                                    טלפון ${state.sortBy === 'phone' ? (state.sortDir === 'asc' ? '▲' : '▼') : ''}
+                                </th>
                                 <th class="px-4 py-2 text-right">מקור</th>
                                 <th class="px-4 py-2 w-12"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${pageItems.map((c, i) => `
+                            ${pageItems.map((c, i) => {
+                                const originalIndex = state.data.allData.findIndex(x => x.phone === c.phone && x.name === c.name);
+                                return `
                                 <tr class="border-b border-slate-100">
                                     <td class="px-4 py-1 text-slate-400">${start + i + 1}</td>
                                     <td class="px-4 py-1">
                                         <input type="text" value="${(c.name || '').replace(/"/g, '&quot;')}"
                                                class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none font-medium bg-transparent"
-                                               onchange="updateName(${start + i}, this.value)">
+                                               onchange="updateName(${originalIndex}, this.value)">
                                     </td>
                                     <td class="px-4 py-1 text-slate-600">${c.phone}</td>
                                     <td class="px-4 py-1 text-slate-400 text-xs truncate max-w-[150px]">${c.sourceFile || ''}</td>
                                     <td class="px-4 py-1">
-                                        <button onclick="clearName(${start + i})" class="text-red-400 hover:text-red-600">🗑️</button>
+                                        <button onclick="clearName(${originalIndex})" class="text-red-400 hover:text-red-600">🗑️</button>
                                     </td>
                                 </tr>
-                            `).join('')}
+                            `}).join('')}
                         </tbody>
                     </table>
                 `;
@@ -387,6 +408,23 @@
                 'too_long': 'טלפון ארוך מדי'
             };
             return reasons[reason] || reason;
+        }
+        
+        function setSort(field) {
+            if (state.sortBy === field && field !== 'index') {
+                state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.sortBy = field;
+                state.sortDir = 'asc';
+            }
+            state.page = 1;
+            renderTabContent();
+        }
+        
+        function setFilterSource(source) {
+            state.filterSource = source;
+            state.page = 1;
+            renderTabContent();
         }
         
         function changePage(page) {
@@ -500,13 +538,8 @@
             document.getElementById('rule-preferHebrew').checked = rules.preferHebrew !== false;
             document.getElementById('rule-avoidSpecialChars').checked = rules.avoidSpecialChars !== false;
             document.getElementById('rule-preferNoNumbers').checked = rules.preferNoNumbers !== false;
-            document.getElementById('rule-minLength').value = rules.minLength || 2;
-            document.getElementById('rule-maxLength').value = rules.maxLength || 20;
             
-            // רינדור כללי ניקוי
-            renderCleaningRules();
-            
-            // רינדור שמות אסורים
+            // רינדור שמות אסורים (רק אלו שהמשתמש הוסיף)
             renderInvalidNames();
         }
         
@@ -515,104 +548,21 @@
             document.getElementById('settingsModal').classList.remove('flex');
         }
         
-        // כללי ניקוי
-        const ruleTypeLabels = {
-            'trim_start': 'הסר מתחילת השם',
-            'trim_end': 'הסר מסוף השם',
-            'replace': 'החלף',
-            'regex': 'ביטוי רגולרי'
-        };
-        
-        function renderCleaningRules() {
-            const rules = state.settings.cleaningRules || [];
-            document.getElementById('cleaningRulesList').innerHTML = rules.map((rule, idx) => `
-                <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl ${!rule.enabled ? 'opacity-50' : ''}">
-                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} 
-                           onchange="toggleCleaningRule(${idx})" 
-                           class="w-5 h-5 accent-indigo-600">
-                    <span class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded">${ruleTypeLabels[rule.type] || rule.type}</span>
-                    <code class="text-sm bg-slate-200 px-2 py-1 rounded">"${rule.pattern}"</code>
-                    ${rule.type === 'replace' || rule.type === 'regex' ? `<span class="text-slate-400">→</span><code class="text-sm bg-green-100 px-2 py-1 rounded">"${rule.replacement || ''}"</code>` : ''}
-                    <span class="flex-1 text-slate-600 text-sm">${rule.description || ''}</span>
-                    <button onclick="deleteCleaningRule(${idx})" class="text-red-400 hover:text-red-600 text-lg">✕</button>
-                </div>
-            `).join('') || '<p class="text-slate-400 text-center py-4">אין כללי ניקוי מוגדרים</p>';
-        }
-        
-        function toggleCleaningRule(idx) {
-            if (state.settings.cleaningRules[idx]) {
-                state.settings.cleaningRules[idx].enabled = !state.settings.cleaningRules[idx].enabled;
-                renderCleaningRules();
-            }
-        }
-        
-        function deleteCleaningRule(idx) {
-            state.settings.cleaningRules.splice(idx, 1);
-            renderCleaningRules();
-            Toast.fire({ icon: 'success', title: 'הכלל נמחק' });
-        }
-        
-        function addCleaningRule() {
-            const type = document.getElementById('newRuleType').value;
-            const pattern = document.getElementById('newRulePattern').value;
-            const replacement = document.getElementById('newRuleReplacement').value;
-            const description = document.getElementById('newRuleDesc').value;
-            
-            if (!pattern) return Toast.fire({ icon: 'error', title: 'הזן תו או טקסט' });
-            
-            const newRule = {
-                id: Date.now(),
-                type,
-                pattern,
-                replacement: (type === 'replace' || type === 'regex') ? replacement : undefined,
-                description,
-                enabled: true
-            };
-            
-            state.settings.cleaningRules = state.settings.cleaningRules || [];
-            state.settings.cleaningRules.push(newRule);
-            renderCleaningRules();
-            
-            // נקה שדות
-            document.getElementById('newRulePattern').value = '';
-            document.getElementById('newRuleReplacement').value = '';
-            document.getElementById('newRuleDesc').value = '';
-            
-            Toast.fire({ icon: 'success', title: 'הכלל נוסף' });
-        }
-        
-        function updateRuleInputs() {
-            const type = document.getElementById('newRuleType').value;
-            const replacementInput = document.getElementById('newRuleReplacement');
-            const patternInput = document.getElementById('newRulePattern');
-            
-            if (type === 'replace' || type === 'regex') {
-                replacementInput.classList.remove('hidden');
-                patternInput.placeholder = type === 'regex' ? 'ביטוי רגולרי...' : 'טקסט למציאה...';
-            } else {
-                replacementInput.classList.add('hidden');
-                patternInput.placeholder = type === 'trim_start' ? 'תו להסרה מההתחלה...' : 'תו להסרה מהסוף...';
-            }
-        }
-        
-        // שמות אסורים
+        // שמות אסורים - רק אלו שהמשתמש הוסיף (userInvalidNames)
         function renderInvalidNames() {
-            const names = state.settings.invalidNames || [];
-            const patternLabels = { 'exact': 'מדויק', 'contains': 'מכיל', 'regex': 'רגולרי' };
+            const names = state.settings.userInvalidNames || [];
             
-            document.getElementById('invalidNamesList').innerHTML = names.map(n => `
-                <div class="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
-                    <span class="font-medium text-red-700">${n.name}</span>
-                    <span class="text-xs text-red-400 mx-2">(${patternLabels[n.pattern_type] || n.pattern_type})</span>
-                </div>
-            `).join('') || '<p class="text-slate-400 text-center col-span-4 py-4">אין שמות אסורים</p>';
+            document.getElementById('invalidNamesList').innerHTML = names.length ? names.map(n => `
+                <span class="inline-flex items-center gap-1 bg-red-50 text-red-700 px-3 py-1 rounded-full text-sm">
+                    ${n.name || n}
+                    <button onclick="removeInvalidName('${(n.name || n).replace(/'/g, "\\'")}')" class="text-red-400 hover:text-red-600 ml-1">×</button>
+                </span>
+            `).join('') : '<p class="text-slate-400 text-sm">טרם הוספת שמות לא רצויים</p>';
         }
         
         async function addInvalidName() {
             const input = document.getElementById('newInvalidName');
-            const patternSelect = document.getElementById('newInvalidPattern');
             const name = input.value.trim();
-            const patternType = patternSelect.value;
             
             if (!name) return Toast.fire({ icon: 'error', title: 'הזן שם' });
             
@@ -620,39 +570,45 @@
                 await fetch(`/api/public/invalid-names/${token}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, patternType })
+                    body: JSON.stringify({ name, patternType: 'exact' })
                 });
                 
-                state.settings.invalidNames = state.settings.invalidNames || [];
-                state.settings.invalidNames.push({ name, pattern_type: patternType });
+                state.settings.userInvalidNames = state.settings.userInvalidNames || [];
+                state.settings.userInvalidNames.push({ name, pattern_type: 'exact' });
                 input.value = '';
                 renderInvalidNames();
-                Toast.fire({ icon: 'success', title: 'השם נוסף לרשימה השחורה' });
+                Toast.fire({ icon: 'success', title: `"${name}" נוסף לרשימה` });
             } catch (err) {
                 Toast.fire({ icon: 'error', title: 'שגיאה בהוספה' });
             }
+        }
+        
+        async function removeInvalidName(name) {
+            // מחק מהרשימה המקומית
+            state.settings.userInvalidNames = (state.settings.userInvalidNames || []).filter(n => (n.name || n) !== name);
+            renderInvalidNames();
+            Toast.fire({ icon: 'success', title: 'השם הוסר' });
         }
         
         async function saveSettings() {
             try {
                 Swal.fire({ title: 'שומר הגדרות...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
                 
+                // שמור רק העדפות בחירת שמות - שאר ההגדרות נשמרות על ידי הבעלים
                 const nameRules = {
+                    ...state.settings.nameRules, // שמור על ההגדרות הקיימות
                     preferLonger: document.getElementById('rule-preferLonger').checked,
                     preferHebrew: document.getElementById('rule-preferHebrew').checked,
                     avoidSpecialChars: document.getElementById('rule-avoidSpecialChars').checked,
-                    preferNoNumbers: document.getElementById('rule-preferNoNumbers').checked,
-                    minLength: parseInt(document.getElementById('rule-minLength').value) || 2,
-                    maxLength: parseInt(document.getElementById('rule-maxLength').value) || 20,
-                    allowedChars: ["'", '"', "-", " "]
+                    preferNoNumbers: document.getElementById('rule-preferNoNumbers').checked
                 };
                 
                 await fetch(`/api/public/settings/${token}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        nameRules,
-                        cleaningRules: state.settings.cleaningRules
+                        nameRules
+                        // לא שולחים cleaningRules - רק הבעלים יכול לשנות
                     })
                 });
                 
