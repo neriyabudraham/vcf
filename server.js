@@ -338,10 +338,15 @@ async function cleanName(name) {
                     // הסר את כל התווים והאימוג'ים למעט אותיות ורווחים ותווים מותרים
                     const allowedChars = rule.pattern || '';
                     // בנה regex שישמור רק על: אותיות עברית, אותיות אנגלית, מספרים, רווחים, ותווים מותרים
+                    // תווים שצריכים בריחה ב-regex character class
+                    const escapeForCharClass = (char) => {
+                        const needsEscape = ['^', '-', '\\', ']', '['];
+                        return needsEscape.includes(char) ? '\\' + char : char;
+                    };
                     let allowedPattern = 'א-תa-zA-Z0-9\\s';
-                    // הוסף תווים מותרים נוספים (בריחה לתווים מיוחדים ב-regex)
+                    // הוסף תווים מותרים נוספים
                     for (const char of allowedChars) {
-                        allowedPattern += '\\' + char;
+                        allowedPattern += escapeForCharClass(char);
                     }
                     try {
                         const removeRegex = new RegExp(`[^${allowedPattern}]`, 'gu');

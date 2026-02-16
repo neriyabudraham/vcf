@@ -549,27 +549,56 @@
         }
         
         async function saveAllSettingsAndApply() {
-            // שמור כללי שמות
-            await saveNameRules();
-            
             // אם יש טיוטה פתוחה, החל את ההגדרות מיידית
             if (state.analysisData && state.currentGroupId) {
                 closeSettingsModal();
                 
-                // הצג טעינה
+                const totalContacts = state.analysisData.allData?.length || 0;
+                
+                // הצג חלון התקדמות
                 Swal.fire({
                     title: '⏳ מחיל הגדרות...',
-                    html: '<p>מעבד מחדש את אנשי הקשר בהתאם להגדרות החדשות</p>',
+                    html: `
+                        <div class="text-right">
+                            <p id="settingsProgressText" class="mb-3 text-slate-600">שומר הגדרות...</p>
+                            <div class="w-full bg-slate-200 rounded-full h-4 mb-2">
+                                <div id="settingsProgressBar" class="bg-indigo-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                            <p id="settingsProgressPercent" class="text-sm text-slate-500">0%</p>
+                        </div>
+                    `,
                     allowOutsideClick: false,
-                    showConfirmButton: false,
-                    didOpen: () => Swal.showLoading()
+                    showConfirmButton: false
                 });
                 
-                // טען מחדש את הטיוטה עם ההגדרות החדשות
-                await reloadDraftWithNewSettings();
+                const updateProgress = (percent, text) => {
+                    document.getElementById('settingsProgressBar').style.width = percent + '%';
+                    document.getElementById('settingsProgressPercent').textContent = percent + '%';
+                    if (text) document.getElementById('settingsProgressText').textContent = text;
+                };
                 
-                Swal.fire({ icon: 'success', title: 'ההגדרות הוחלו!', timer: 1500 });
+                try {
+                    // שלב 1: שמור הגדרות (20%)
+                    updateProgress(10, 'שומר כללי שמות...');
+                    await saveNameRules();
+                    updateProgress(20, 'ההגדרות נשמרו');
+                    
+                    // שלב 2: טעינה מחדש (20-90%)
+                    updateProgress(30, `מעבד ${totalContacts.toLocaleString()} אנשי קשר...`);
+                    
+                    // טען מחדש את הטיוטה עם ההגדרות החדשות
+                    await reloadDraftWithNewSettings();
+                    
+                    updateProgress(100, 'הושלם!');
+                    
+                    await new Promise(r => setTimeout(r, 300));
+                    Swal.fire({ icon: 'success', title: 'ההגדרות הוחלו!', timer: 1500 });
+                } catch (err) {
+                    Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+                }
             } else {
+                // אין טיוטה פתוחה - רק שמור הגדרות
+                await saveNameRules();
                 closeSettingsModal();
                 Toast.fire({ icon: 'success', title: 'ההגדרות נשמרו' });
             }
