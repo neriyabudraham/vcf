@@ -1877,7 +1877,7 @@ app.post('/api/groups/:id/add-files', auth, async (req, res) => {
 
 app.get('/api/export/:type/:id', auth, async (req, res) => {
     try {
-        const r = await pool.query('SELECT full_name, phone, email FROM contacts WHERE group_id = $1', [req.params.id]);
+        const r = await pool.query('SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1', [req.params.id]);
         const g = await pool.query('SELECT name FROM contact_groups WHERE id = $1', [req.params.id]);
         const groupName = g.rows[0]?.name || 'contacts';
         
