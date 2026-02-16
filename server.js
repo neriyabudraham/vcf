@@ -290,6 +290,17 @@ function getDefaultCleaningRules() {
 async function cleanName(name) {
     if (!name) return name;
     
+    // הסר תווים נסתרים: ניקוד עברי, סימני פיסוק עבריים, רווחים מיוחדים
+    // Hebrew points (nikud): U+0591-U+05C7
+    // Zero-width characters: U+200B-U+200F, U+FEFF
+    // Various spaces: U+00A0, U+2000-U+200A
+    let result = name.toString()
+        .replace(/[\u0591-\u05C7]/g, '') // ניקוד עברי
+        .replace(/[\u200B-\u200F\uFEFF]/g, '') // zero-width characters
+        .replace(/[\u00A0\u2000-\u200A]/g, ' ') // רווחים מיוחדים לרווח רגיל
+        .replace(/\s+/g, ' ') // רווחים כפולים לרווח יחיד
+        .trim();
+    
     // Force reload of rules each time to ensure fresh data
     await loadCleaningRules();
     const rules = cleaningRulesCache || [];
@@ -395,10 +406,31 @@ async function chooseBestName(names) {
     return bestName;
 }
 
+// נרמול שם - הסרת תווים נסתרים
+function normalizeNameForCompare(name) {
+    if (!name) return '';
+    return name.toString()
+        .replace(/[\u0591-\u05C7]/g, '') // ניקוד עברי
+        .replace(/[\u200B-\u200F\uFEFF]/g, '') // zero-width characters
+        .replace(/[\u00A0\u2000-\u200A]/g, ' ') // רווחים מיוחדים
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
 // יצירת שם ייחודי עם סיומת מספור
 async function makeUniqueName(name, existingNames, phone = '') {
     if (!name) return name;
-    let baseName = getBaseName(name);
+    
+    // נרמל את השם לפני עיבוד
+    let cleanedName = name.toString()
+        .replace(/[\u0591-\u05C7]/g, '')
+        .replace(/[\u200B-\u200F\uFEFF]/g, '')
+        .replace(/[\u00A0\u2000-\u200A]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    let baseName = getBaseName(cleanedName);
     
     // אם השם ריק או רק מספרים בסוגריים - תן שם דיפולטיבי
     if (!baseName || /^\s*\(\d+\)\s*$/.test(baseName)) {
