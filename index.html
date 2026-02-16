@@ -1682,33 +1682,36 @@
             }
         }
         
-        async function handleLabelChange(phone, value) {
+        function handleLabelChange(phone, value) {
             if (value === 'אחר') {
                 // בקש תווית מותאמת אישית
-                const { value: customLabel } = await Swal.fire({
-                    title: 'הזן תווית מותאמת',
-                    input: 'text',
-                    inputPlaceholder: 'למשל: פקס, משרד, וכו...',
-                    showCancelButton: true,
-                    confirmButtonText: 'שמור',
-                    cancelButtonText: 'ביטול',
-                    inputValidator: (val) => !val && 'הזן שם לתווית'
-                });
-                
-                if (customLabel) {
-                    state.mergePhoneLabels[phone] = customLabel;
-                    
-                    // שמור לתוויות מותאמות אם לא קיים
-                    if (!state.customPhoneLabels.includes(customLabel)) {
-                        state.customPhoneLabels.push(customLabel);
-                        localStorage.setItem('customPhoneLabels', JSON.stringify(state.customPhoneLabels));
-                    }
-                    
-                    renderMergeSelected();
-                } else {
-                    // חזור לתווית הקודמת
-                    renderMergeSelected();
-                }
+                setTimeout(() => {
+                    Swal.fire({
+                        title: 'הזן תווית מותאמת',
+                        input: 'text',
+                        inputPlaceholder: 'למשל: פקס, משרד, וכו...',
+                        showCancelButton: true,
+                        confirmButtonText: 'שמור',
+                        cancelButtonText: 'ביטול',
+                        inputValidator: (val) => !val && 'הזן שם לתווית'
+                    }).then((result) => {
+                        if (result.isConfirmed && result.value) {
+                            const customLabel = result.value;
+                            state.mergePhoneLabels[phone] = customLabel;
+                            
+                            // שמור לתוויות מותאמות אם לא קיים
+                            if (!state.customPhoneLabels.includes(customLabel)) {
+                                state.customPhoneLabels.push(customLabel);
+                                localStorage.setItem('customPhoneLabels', JSON.stringify(state.customPhoneLabels));
+                            }
+                            
+                            renderMergeSelected();
+                        } else {
+                            // חזור לתווית הקודמת
+                            renderMergeSelected();
+                        }
+                    });
+                }, 50);
             } else {
                 state.mergePhoneLabels[phone] = value;
             }
@@ -1988,6 +1991,10 @@
         async function updateAnalysisName(index, newName) {
             if (!state.analysisData?.allData?.[index]) return;
             
+            // שמור את מיקום הגלילה
+            const scrollContainer = document.querySelector('#analysisContent .overflow-y-auto');
+            const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+            
             const contact = state.analysisData.allData[index];
             const oldName = contact.name;
             
@@ -2024,9 +2031,15 @@
                                 text: `"${baseName}" נוסף לרשימה שחורה`
                             });
                             
-                            // שמור ורענן
+                            // שמור ורענן עם שמירת מיקום גלילה
                             scheduleDraftSave();
                             showAnalysisTab('accepted');
+                            
+                            // שחזר מיקום גלילה
+                            setTimeout(() => {
+                                const newScrollContainer = document.querySelector('#analysisContent .overflow-y-auto');
+                                if (newScrollContainer) newScrollContainer.scrollTop = scrollTop;
+                            }, 50);
                             return;
                         } catch (err) {
                             console.error('Error adding to blacklist:', err);
