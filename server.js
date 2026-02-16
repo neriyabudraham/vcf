@@ -1951,7 +1951,9 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
         console.log(`[EXPORT] Generated output length: ${out.length}`);
         
         res.setHeader('Content-Type', req.params.type === 'csv' ? 'text/csv; charset=utf-8' : 'text/vcard; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(groupName)}.${req.params.type}"`);
+        // RFC 5987 encoding for Hebrew filenames
+        const safeFilename = groupName.replace(/[^\w\u0590-\u05FF\s\-]/g, '').trim() || 'contacts';
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}.${req.params.type}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}.${req.params.type}`);
         res.send('\ufeff' + out);
     } catch (err) {
         console.error('[EXPORT] Error:', err);
