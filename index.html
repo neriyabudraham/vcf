@@ -284,17 +284,24 @@
             
             <!-- Search & Contacts -->
             <div class="glass-card rounded-2xl p-6">
-                <div class="flex gap-4 mb-6">
+                <div class="flex flex-wrap gap-4 mb-6">
                     <input type="text" id="contactSearch" placeholder="🔍 חיפוש לפי שם או טלפון..." class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none" oninput="searchContacts()">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-slate-500">מיון:</span>
+                        <button onclick="setContactSort('name')" id="sortNameBtn" class="px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white">שם</button>
+                        <button onclick="setContactSort('phone')" id="sortPhoneBtn" class="px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200">טלפון</button>
+                        <button onclick="setContactSort('source')" id="sortSourceBtn" class="px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200">מקור</button>
+                        <button onclick="toggleSortDir()" id="sortDirBtn" class="px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200" title="הפוך כיוון">▲</button>
+                    </div>
                 </div>
                 <div id="contactsTable" class="overflow-x-auto max-h-[60vh] overflow-y-auto">
                     <table class="w-full">
                         <thead class="bg-slate-50 text-slate-600 sticky top-0">
                             <tr>
-                                <th class="px-4 py-3 text-right font-semibold rounded-tr-xl">שם</th>
-                                <th class="px-4 py-3 text-right font-semibold">טלפון</th>
+                                <th class="px-4 py-3 text-right font-semibold rounded-tr-xl cursor-pointer hover:bg-slate-100" onclick="setContactSort('name')">שם</th>
+                                <th class="px-4 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" onclick="setContactSort('phone')">טלפון</th>
                                 <th class="px-4 py-3 text-right font-semibold">אימייל</th>
-                                <th class="px-4 py-3 text-right font-semibold">מקור</th>
+                                <th class="px-4 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" onclick="setContactSort('source')">מקור</th>
                                 <th class="px-4 py-3 text-center font-semibold rounded-tl-xl w-24">פעולות</th>
                             </tr>
                         </thead>
@@ -484,10 +491,13 @@
             analysisPage: 1,
             rejectedPage: 1,
             addToGroupAfterUpload: null,
-            // מיון וסינון
+            // מיון וסינון - טיוטה
             sortBy: 'index', // index, name, phone
             sortDir: 'asc',  // asc, desc
             filterSource: '', // סינון לפי מקור
+            // מיון - רשימה סופית
+            contactSortBy: 'name',
+            contactSortDir: 'asc',
             // איחוד אנשי קשר
             mergeSourceIndex: null,
             mergeSelectedIndexes: [],
@@ -676,7 +686,7 @@
         async function loadContacts() {
             const search = document.getElementById('contactSearch')?.value || '';
             try {
-                const data = await api(`/api/groups/${state.currentGroupId}/contacts?search=${encodeURIComponent(search)}&page=${state.currentPage}&limit=50`);
+                const data = await api(`/api/groups/${state.currentGroupId}/contacts?search=${encodeURIComponent(search)}&page=${state.currentPage}&limit=50&sortBy=${state.contactSortBy}&sortDir=${state.contactSortDir}`);
                 
                 document.getElementById('contactsBody').innerHTML = data.contacts.map(c => `
                     <tr class="table-row border-b border-slate-100" id="contact-row-${c.id}">
@@ -717,6 +727,38 @@
         function searchContacts() {
             state.currentPage = 1;
             loadContacts();
+        }
+
+        function setContactSort(field) {
+            if (state.contactSortBy === field) {
+                state.contactSortDir = state.contactSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.contactSortBy = field;
+                state.contactSortDir = 'asc';
+            }
+            updateContactSortButtons();
+            state.currentPage = 1;
+            loadContacts();
+        }
+
+        function toggleSortDir() {
+            state.contactSortDir = state.contactSortDir === 'asc' ? 'desc' : 'asc';
+            updateContactSortButtons();
+            state.currentPage = 1;
+            loadContacts();
+        }
+
+        function updateContactSortButtons() {
+            ['name', 'phone', 'source'].forEach(field => {
+                const btn = document.getElementById(`sort${field.charAt(0).toUpperCase() + field.slice(1)}Btn`);
+                if (btn) {
+                    btn.className = state.contactSortBy === field 
+                        ? 'px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white'
+                        : 'px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200';
+                }
+            });
+            const dirBtn = document.getElementById('sortDirBtn');
+            if (dirBtn) dirBtn.textContent = state.contactSortDir === 'asc' ? '▲' : '▼';
         }
 
         async function updateContactName(id, newName) {
@@ -945,74 +987,27 @@
         }
 
         async function shareGroup() {
-            // שלב 1: בחר סוג שיתוף
-            const modeResult = await Swal.fire({
-                title: '🔗 בחר סוג שיתוף',
-                html: `
-                    <div class="text-right space-y-4">
-                        <div class="p-4 border-2 border-slate-200 rounded-xl cursor-pointer hover:border-indigo-500 transition" onclick="document.getElementById('shareSimple').checked = true">
-                            <label class="flex items-start gap-3 cursor-pointer">
-                                <input type="radio" name="shareMode" id="shareSimple" value="simple" checked class="mt-1">
-                                <div>
-                                    <p class="font-bold text-slate-800">📋 תצוגה פשוטה</p>
-                                    <p class="text-sm text-slate-500">הקליינט יכול לראות את הרשימה, לערוך שמות ולהוריד VCF</p>
-                                </div>
-                            </label>
-                        </div>
-                        <div class="p-4 border-2 border-slate-200 rounded-xl cursor-pointer hover:border-indigo-500 transition" onclick="document.getElementById('shareFull').checked = true">
-                            <label class="flex items-start gap-3 cursor-pointer">
-                                <input type="radio" name="shareMode" id="shareFull" value="full" class="mt-1">
-                                <div>
-                                    <p class="font-bold text-slate-800">⚙️ תצוגה מלאה (עריכה מתקדמת)</p>
-                                    <p class="text-sm text-slate-500">הקליינט רואה הכל כמו שאתה רואה - כולל קונפליקטים, נדחו, הגדרות ניקוי, ויכול לשמור סופית</p>
-                                    <p class="text-xs text-amber-600 mt-1">⚠️ הקליינט יכול לשנות את ההגדרות שלך!</p>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-                `,
-                showCancelButton: true,
-                confirmButtonText: 'המשך ▶',
-                cancelButtonText: 'ביטול'
-            });
-            
-            if (!modeResult.isConfirmed) return;
-            
-            const mode = document.querySelector('input[name="shareMode"]:checked')?.value || 'simple';
-            
             try {
                 const data = await api(`/api/groups/${state.currentGroupId}/share`, { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode })
+                    body: JSON.stringify({})
                 });
                 const fullUrl = `${window.location.origin}${data.url}`;
                 
-                const features = mode === 'full' ? `
-                    <ul class="text-sm text-slate-500 space-y-1">
-                        <li>✅ לצפות בכל הנתונים (אושרו, נדחו, קונפליקטים)</li>
-                        <li>✅ לערוך שמות ולפתור קונפליקטים</li>
-                        <li>✅ לשנות הגדרות ניקוי שמות</li>
-                        <li>✅ לשמור את הרשימה הסופית</li>
-                        <li>✅ להוריד קובץ VCF</li>
-                        <li>❌ לא יוכל להוסיף קבצים או ליצור רשימות חדשות</li>
-                    </ul>
-                ` : `
-                    <ul class="text-sm text-slate-500 space-y-1">
-                        <li>✅ לצפות באנשי הקשר</li>
-                        <li>✅ לערוך שמות</li>
-                        <li>✅ לתקן כפילויות</li>
-                        <li>✅ להוריד קובץ VCF</li>
-                        <li>❌ לא יוכל להוסיף אנשי קשר חדשים</li>
-                    </ul>
-                `;
-                
                 const result = await Swal.fire({
-                    title: `🔗 לינק שיתוף ${mode === 'full' ? '(מלא)' : '(פשוט)'}`,
+                    title: '🔗 לינק שיתוף',
                     html: `
                         <div class="text-right space-y-4">
                             <p class="text-slate-600">כל מי שיקבל את הלינק יוכל:</p>
-                            ${features}
+                            <ul class="text-sm text-slate-500 space-y-1">
+                                <li>✅ לצפות בכל הנתונים (אושרו, נדחו, קונפליקטים)</li>
+                                <li>✅ לערוך שמות ולפתור קונפליקטים</li>
+                                <li>✅ לשנות הגדרות ניקוי שמות</li>
+                                <li>✅ לשמור את הרשימה הסופית</li>
+                                <li>✅ להוריד קובץ VCF</li>
+                                <li>❌ לא יוכל להוסיף קבצים או ליצור רשימות חדשות</li>
+                            </ul>
                             <div class="bg-slate-100 rounded-xl p-3">
                                 <input type="text" value="${fullUrl}" readonly 
                                        id="shareUrlInput"

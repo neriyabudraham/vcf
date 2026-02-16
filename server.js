@@ -1125,7 +1125,8 @@ app.post('/api/finalize', auth, async (req, res) => {
             [groupName, groupId, JSON.stringify(fullDraftData), JSON.stringify(stats || {})]
         );
         
-        // שמירת גרסה ראשונה
+        // מחק גרסאות קודמות ושמור גרסה ראשונה חדשה
+        await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
         await pool.query(
             `INSERT INTO group_versions (group_id, version_number, version_name, contacts_snapshot, stats) 
              VALUES ($1, 1, 'גרסה ראשונית', $2, $3)`,
@@ -1228,7 +1229,7 @@ app.get('/api/groups/:id', auth, async (req, res) => {
 
 app.get('/api/groups/:id/contacts', auth, async (req, res) => {
     try {
-        const { search, page = 1, limit = 100 } = req.query;
+        const { search, page = 1, limit = 100, sortBy = 'name', sortDir = 'asc' } = req.query;
         const offset = (page - 1) * limit;
         
         let query = 'SELECT * FROM contacts WHERE group_id = $1';
@@ -1239,7 +1240,12 @@ app.get('/api/groups/:id/contacts', auth, async (req, res) => {
             params.push(`%${search}%`);
         }
         
-        query += ' ORDER BY full_name ASC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+        // מיון
+        const sortColumn = sortBy === 'phone' ? 'phone' : sortBy === 'source' ? 'source_file_name' : 'full_name';
+        const sortDirection = sortDir === 'desc' ? 'DESC' : 'ASC';
+        query += ` ORDER BY ${sortColumn} ${sortDirection} NULLS LAST`;
+        
+        query += ' LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
         params.push(limit, offset);
         
         const r = await pool.query(query, params);
@@ -1271,27 +1277,55 @@ app.delete('/api/groups/:id', auth, async (req, res) => {
     // שלח תשובה מיד - המחיקה תמשיך ברקע
     res.json({ success: true, message: 'Deletion started' });
     
+    // פונקציה למחיקה בחלקים עם טיימאאוט והמתנה
+    const deleteInChunks = async (tableName, whereClause, chunkSize = 2000) => {
+        let totalDeleted = 0;
+        let retries = 0;
+        const maxRetries = 5;
+        
+        while (retries < maxRetries) {
+            try {
+                const result = await pool.query(
+                    `DELETE FROM ${tableName} WHERE id IN (SELECT id FROM ${tableName} WHERE ${whereClause} LIMIT ${chunkSize})`,
+                    [groupId]
+                );
+                
+                if (result.rowCount === 0) break;
+                
+                totalDeleted += result.rowCount;
+                console.log(`[DELETE GROUP] Deleted ${totalDeleted} from ${tableName}...`);
+                
+                // המתן מעט בין חלקים כדי לא לעמיס על ה-DB
+                await new Promise(r => setTimeout(r, 100));
+                retries = 0; // אפס את הרטריות אחרי הצלחה
+                
+            } catch (err) {
+                retries++;
+                console.log(`[DELETE GROUP] Retry ${retries}/${maxRetries} for ${tableName}: ${err.message}`);
+                await new Promise(r => setTimeout(r, 1000 * retries)); // המתנה מוגברת
+            }
+        }
+        
+        return totalDeleted;
+    };
+    
     try {
         // מחק גרסאות
-        await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
-        console.log(`[DELETE GROUP] Deleted versions`);
+        try {
+            await pool.query('DELETE FROM group_versions WHERE group_id = $1', [groupId]);
+            console.log(`[DELETE GROUP] Deleted versions`);
+        } catch (e) {
+            console.log(`[DELETE GROUP] Versions delete error (non-critical): ${e.message}`);
+        }
         
         // מחק אנשי קשר שנדחו
         try {
             await pool.query('DELETE FROM rejected_contacts WHERE group_id = $1', [groupId]);
+            console.log(`[DELETE GROUP] Deleted rejected contacts`);
         } catch (e) { }
         
-        // מחק אנשי קשר בחלקים של 5000
-        let deleted = 0;
-        while (true) {
-            const result = await pool.query(
-                'DELETE FROM contacts WHERE id IN (SELECT id FROM contacts WHERE group_id = $1 LIMIT 5000)', 
-                [groupId]
-            );
-            deleted += result.rowCount;
-            console.log(`[DELETE GROUP] Deleted ${deleted} contacts so far...`);
-            if (result.rowCount < 5000) break;
-        }
+        // מחק אנשי קשר בחלקים
+        const deleted = await deleteInChunks('contacts', 'group_id = $1', 2000);
         console.log(`[DELETE GROUP] Total deleted ${deleted} contacts`);
         
         // מחק את הקבוצה עצמה
@@ -1388,36 +1422,82 @@ app.post('/api/groups/:id/save-version', auth, async (req, res) => {
 });
 
 app.post('/api/groups/:id/restore-version/:versionId', auth, async (req, res) => {
+    const { id, versionId } = req.params;
+    
     try {
-        const { id, versionId } = req.params;
-        
         // קבל את ה-snapshot
         const v = await pool.query('SELECT * FROM group_versions WHERE id = $1 AND group_id = $2', [versionId, id]);
         if (!v.rows[0]) return res.status(404).json({ error: 'Version not found' });
         
         const snapshot = v.rows[0].contacts_snapshot;
+        console.log(`[RESTORE] Starting restore version ${versionId} for group ${id}, ${snapshot?.length || 0} contacts`);
         
-        // מחק אנשי קשר קיימים
-        await pool.query('DELETE FROM contacts WHERE group_id = $1', [id]);
+        // שלח תשובה מיד
+        res.json({ success: true, restoredCount: snapshot?.length || 0, message: 'Restore started' });
         
-        // שחזר מה-snapshot
+        // מחק אנשי קשר קיימים בחלקים
+        let deleted = 0;
+        while (true) {
+            const result = await pool.query(
+                'DELETE FROM contacts WHERE id IN (SELECT id FROM contacts WHERE group_id = $1 LIMIT 2000)', 
+                [id]
+            );
+            if (result.rowCount === 0) break;
+            deleted += result.rowCount;
+            console.log(`[RESTORE] Deleted ${deleted} contacts...`);
+            await new Promise(r => setTimeout(r, 50));
+        }
+        console.log(`[RESTORE] Total deleted ${deleted} contacts`);
+        
+        // שחזר מה-snapshot בבאצ'ים
         if (snapshot && snapshot.length > 0) {
+            const truncate = (s, max) => s && s.length > max ? s.substring(0, max) : s;
+            let batch = [];
+            let inserted = 0;
+            
             for (const c of snapshot) {
+                batch.push([
+                    id, 
+                    truncate(c.full_name, 250), 
+                    c.phone, 
+                    c.phone_normalized || c.phone, 
+                    truncate(c.email, 250), 
+                    c.source_file_id, 
+                    truncate(c.source_file_name, 450), 
+                    JSON.stringify(c.original_data || {}), 
+                    JSON.stringify(c.metadata || {})
+                ]);
+                
+                if (batch.length >= 1000) {
+                    await pool.query(
+                        `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
+                         SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::jsonb[], $9::jsonb[])`,
+                        [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3]), batch.map(r=>r[4]), batch.map(r=>r[5]), batch.map(r=>r[6]), batch.map(r=>r[7]), batch.map(r=>r[8])]
+                    );
+                    inserted += batch.length;
+                    console.log(`[RESTORE] Inserted ${inserted} contacts...`);
+                    batch = [];
+                    await new Promise(r => setTimeout(r, 50));
+                }
+            }
+            
+            if (batch.length > 0) {
                 await pool.query(
                     `INSERT INTO contacts (group_id, full_name, phone, phone_normalized, email, source_file_id, source_file_name, original_data, metadata) 
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                    [id, c.full_name, c.phone, c.phone_normalized, c.email, c.source_file_id, c.source_file_name, 
-                     JSON.stringify(c.original_data || {}), JSON.stringify(c.metadata || {})]
+                     SELECT * FROM UNNEST ($1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::jsonb[], $9::jsonb[])`,
+                    [batch.map(r=>r[0]), batch.map(r=>r[1]), batch.map(r=>r[2]), batch.map(r=>r[3]), batch.map(r=>r[4]), batch.map(r=>r[5]), batch.map(r=>r[6]), batch.map(r=>r[7]), batch.map(r=>r[8])]
                 );
+                inserted += batch.length;
             }
+            console.log(`[RESTORE] Total inserted ${inserted} contacts`);
         }
         
         // עדכן סטטיסטיקות
         await pool.query('UPDATE contact_groups SET stats = $2 WHERE id = $1', [id, JSON.stringify(v.rows[0].stats || {})]);
+        console.log(`[RESTORE] Restore completed for group ${id}`);
         
-        res.json({ success: true, restoredCount: snapshot?.length || 0 });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('[RESTORE] Error:', err.message);
     }
 });
 
@@ -1574,24 +1654,24 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
 
 // ==================== SHARING ====================
 
-// יצירת/קבלת לינק שיתוף
+// יצירת/קבלת לינק שיתוף (תמיד מצב מורחב)
 app.post('/api/groups/:id/share', auth, async (req, res) => {
     try {
         const groupId = req.params.id;
-        const { mode = 'simple' } = req.body; // simple או full
+        const mode = 'full'; // תמיד שיתוף מורחב
         
-        let r = await pool.query('SELECT share_token, share_mode FROM contact_groups WHERE id = $1', [groupId]);
+        let r = await pool.query('SELECT share_token FROM contact_groups WHERE id = $1', [groupId]);
         
         let token = r.rows[0]?.share_token;
-        const existingMode = r.rows[0]?.share_mode;
         
-        // אם אין טוקן או המצב השתנה, צור טוקן חדש
-        if (!token || existingMode !== mode) {
+        // אם אין טוקן, צור טוקן חדש
+        if (!token) {
             token = crypto.randomBytes(32).toString('hex');
-            await pool.query('UPDATE contact_groups SET share_token = $1, share_mode = $2 WHERE id = $3', [token, mode, groupId]);
         }
         
-        const url = mode === 'full' ? `/share-full/${token}` : `/share/${token}`;
+        await pool.query('UPDATE contact_groups SET share_token = $1, share_mode = $2 WHERE id = $3', [token, mode, groupId]);
+        
+        const url = `/share-full/${token}`;
         res.json({ token, url, mode });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1608,23 +1688,16 @@ app.delete('/api/groups/:id/share', auth, async (req, res) => {
     }
 });
 
-// דף שיתוף ציבורי - פשוט
+// דף שיתוף ציבורי - הפנה תמיד לשיתוף מורחב
 app.get('/share/:token', async (req, res) => {
+    res.redirect(`/share-full/${req.params.token}`);
+});
+
+// דף שיתוף ציבורי - מורחב (עם עריכה מלאה)
+app.get('/share-full/:token', async (req, res) => {
     try {
         const r = await pool.query('SELECT id FROM contact_groups WHERE share_token = $1', [req.params.token]);
         if (!r.rows[0]) return res.status(404).send('הקישור לא נמצא או פג תוקף');
-        res.sendFile(path.join(__dirname, 'share.html'));
-    } catch (err) {
-        res.status(500).send('שגיאה');
-    }
-});
-
-// דף שיתוף ציבורי - מלא (עם עריכה מלאה)
-app.get('/share-full/:token', async (req, res) => {
-    try {
-        const r = await pool.query('SELECT id, share_mode FROM contact_groups WHERE share_token = $1', [req.params.token]);
-        if (!r.rows[0]) return res.status(404).send('הקישור לא נמצא או פג תוקף');
-        if (r.rows[0].share_mode !== 'full') return res.redirect(`/share/${req.params.token}`);
         res.sendFile(path.join(__dirname, 'share-full.html'));
     } catch (err) {
         res.status(500).send('שגיאה');
