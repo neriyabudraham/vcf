@@ -1357,6 +1357,185 @@ app.post('/api/draft/:id/save', auth, async (req, res) => {
     }
 });
 
+// הוספת קבצים לטיוטה
+app.post('/api/draft/add-files', auth, async (req, res) => {
+    try {
+        const { groupId, fileIds, existingData } = req.body;
+        console.log(`[DRAFT ADD FILES] Adding ${fileIds?.length} files to draft ${groupId}`);
+        
+        if (!fileIds || !fileIds.length) {
+            return res.status(400).json({ error: 'לא נבחרו קבצים' });
+        }
+        
+        // טען הגדרות
+        await loadNameRules();
+        await loadCleaningRules();
+        await loadInvalidNames();
+        
+        const settingsRes = await pool.query("SELECT value FROM system_settings WHERE key = 'name_rules'");
+        const rules = settingsRes.rows[0]?.value || {};
+        const defaultName = rules.defaultName || 'איש קשר';
+        
+        // אסוף את הנתונים הקיימים
+        let allData = existingData?.allData || [];
+        let rejectedContacts = existingData?.rejectedContacts || [];
+        let conflicts = existingData?.conflicts || [];
+        let autoResolved = existingData?.autoResolved || [];
+        
+        // צור Map של טלפונים קיימים
+        const existingPhones = new Map();
+        allData.forEach(c => {
+            if (c.phone) existingPhones.set(c.phone, c);
+            if (c.email && c.hasEmailOnly) existingPhones.set(`email:${c.email.toLowerCase()}`, c);
+        });
+        
+        let serial = allData.length + 1;
+        let addedCount = 0;
+        let duplicatesCount = 0;
+        let rejectedCount = 0;
+        
+        // עבד כל קובץ
+        for (const fileId of fileIds) {
+            const fileRes = await pool.query('SELECT * FROM uploaded_files WHERE id = $1', [fileId]);
+            if (!fileRes.rows[0]) continue;
+            
+            const file = fileRes.rows[0];
+            const content = fs.readFileSync(file.file_path, 'utf8');
+            
+            let rows = [];
+            if (file.file_type === 'vcf') {
+                rows = parseVcf(content);
+            } else {
+                const stream = require('stream');
+                const csvStream = csv();
+                const readable = stream.Readable.from([content]);
+                for await (const row of readable.pipe(csvStream)) rows.push(row);
+            }
+            
+            console.log(`[DRAFT ADD FILES] Processing ${file.original_name}: ${rows.length} rows`);
+            
+            for (const row of rows) {
+                const rawPhone = row.Phone || row.phone || '';
+                const phoneResult = normalizePhone(rawPhone);
+                const email = row.Email || row.email || '';
+                
+                if (!phoneResult.normalized) {
+                    // בדוק אם יש מייל
+                    if (email && email.includes('@')) {
+                        const emailKey = `email:${email.toLowerCase()}`;
+                        if (!existingPhones.has(emailKey)) {
+                            let name = await cleanName(row.Name || row.name || '');
+                            if (!name) name = email.split('@')[0];
+                            
+                            const contactData = {
+                                name,
+                                phone: '',
+                                email: email,
+                                sourceFile: file.original_name,
+                                sourceFileId: file.id,
+                                originalData: row.OriginalData || {},
+                                hasEmailOnly: true
+                            };
+                            
+                            allData.push(contactData);
+                            existingPhones.set(emailKey, contactData);
+                            addedCount++;
+                        } else {
+                            duplicatesCount++;
+                        }
+                    } else {
+                        rejectedContacts.push({
+                            name: row.Name || row.name || '(ללא שם)',
+                            phone: rawPhone || '',
+                            email: email || '',
+                            reason: phoneResult.reason,
+                            sourceFile: file.original_name,
+                            sourceFileId: file.id,
+                            originalData: row.OriginalData || {}
+                        });
+                        rejectedCount++;
+                    }
+                    continue;
+                }
+                
+                const phone = phoneResult.normalized;
+                
+                if (existingPhones.has(phone)) {
+                    duplicatesCount++;
+                    continue;
+                }
+                
+                let name = await cleanName(row.Name || row.name || '');
+                if (!name) name = `${defaultName} ${serial++}`;
+                
+                const contactData = {
+                    name,
+                    phone,
+                    phoneRaw: rawPhone,
+                    email: email || '',
+                    sourceFile: file.original_name,
+                    sourceFileId: file.id,
+                    originalData: row.OriginalData || {}
+                };
+                
+                allData.push(contactData);
+                existingPhones.set(phone, contactData);
+                addedCount++;
+            }
+            
+            // סמן קובץ כמעובד
+            await pool.query("UPDATE uploaded_files SET status = 'processed' WHERE id = $1", [fileId]);
+        }
+        
+        // מיין לפי אורך טלפון
+        allData.sort((a, b) => {
+            const aLen = (a.phone || '').length;
+            const bLen = (b.phone || '').length;
+            return bLen - aLen;
+        });
+        
+        // וודא שמות ייחודיים
+        const usedNames = new Set();
+        for (const contact of allData) {
+            contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
+        }
+        
+        // עדכן סטטיסטיקות
+        const stats = {
+            ...(existingData?.stats || {}),
+            totalParsed: (existingData?.stats?.totalParsed || 0) + addedCount + duplicatesCount + rejectedCount,
+            totalValid: allData.length,
+            totalRejected: rejectedContacts.length,
+            totalDuplicates: (existingData?.stats?.totalDuplicates || 0) + duplicatesCount
+        };
+        
+        const responseData = {
+            groupId,
+            allData,
+            conflicts,
+            autoResolved,
+            rejectedContacts,
+            stats,
+            fileIds: [...(existingData?.fileIds || []), ...fileIds],
+            targetGroupName: existingData?.targetGroupName,
+            addedCount
+        };
+        
+        // שמור את הטיוטה המעודכנת
+        await pool.query(
+            'UPDATE contact_groups SET draft_data = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [JSON.stringify(responseData), groupId]
+        );
+        
+        console.log(`[DRAFT ADD FILES] Done: added=${addedCount}, duplicates=${duplicatesCount}, rejected=${rejectedCount}`);
+        
+        res.json(responseData);
+    } catch (err) {
+        console.error('[DRAFT ADD FILES] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ==================== FINALIZE GROUP ====================
 
 app.post('/api/finalize', auth, async (req, res) => {

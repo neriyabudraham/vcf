@@ -222,6 +222,9 @@
                     <p class="text-slate-500" id="analysisSummary"></p>
                 </div>
                 <div class="flex gap-3">
+                    <button onclick="addFilesToDraft()" class="px-6 py-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-bold">
+                        ➕ הוסף קבצים
+                    </button>
                     <button onclick="openSettingsModal()" class="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold">
                         ⚙️ הגדרות
                     </button>
@@ -505,6 +508,7 @@
             rejectedPage: 1,
             filterRejectedReason: '',
             addToGroupAfterUpload: null,
+            addToDraftAfterUpload: null,
             // מיון וסינון - טיוטה
             sortBy: 'name', // index, name, phone
             sortDir: 'asc',  // asc, desc
@@ -1379,8 +1383,21 @@
                 globalProgress.classList.remove('bg-green-500');
                 globalProgress.style.width = '0%';
                 
+                // אם היינו באמצע הוספה לטיוטה
+                if (state.addToDraftAfterUpload) {
+                    const groupId = state.addToDraftAfterUpload;
+                    state.addToDraftAfterUpload = null;
+                    
+                    // קח את הקבצים שזה עתה הועלו
+                    const newFiles = await api('/api/files');
+                    const newFileIds = newFiles.slice(0, files.length).map(f => f.id);
+                    
+                    if (newFileIds.length) {
+                        await addSelectedFilesToDraft(newFileIds);
+                    }
+                }
                 // אם היינו באמצע הוספה לקבוצה קיימת
-                if (state.addToGroupAfterUpload) {
+                else if (state.addToGroupAfterUpload) {
                     const groupId = state.addToGroupAfterUpload;
                     state.addToGroupAfterUpload = null;
                     state.currentGroupId = groupId;
@@ -2960,6 +2977,117 @@
                 
             } catch (err) {
                 clearInterval(progressInterval);
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
+        }
+
+        // ==================== ADD TO DRAFT ====================
+        async function addFilesToDraft() {
+            const pendingFiles = await api('/api/files');
+            
+            const { value: action } = await Swal.fire({
+                title: 'הוספת קבצים לטיוטה',
+                html: `
+                    <div class="text-right space-y-4">
+                        <button id="uploadNewDraftBtn" class="w-full p-4 bg-indigo-50 hover:bg-indigo-100 rounded-xl text-right border-2 border-indigo-200">
+                            <p class="font-bold text-indigo-700">📁 העלה קבצים חדשים</p>
+                            <p class="text-sm text-slate-500">בחר קבצי VCF או CSV מהמחשב</p>
+                        </button>
+                        ${pendingFiles.length ? `
+                            <button id="selectExistingDraftBtn" class="w-full p-4 bg-slate-50 hover:bg-slate-100 rounded-xl text-right border-2 border-slate-200">
+                                <p class="font-bold text-slate-700">📋 בחר מקבצים קיימים</p>
+                                <p class="text-sm text-slate-500">${pendingFiles.length} קבצים ממתינים</p>
+                            </button>
+                        ` : ''}
+                    </div>
+                `,
+                showConfirmButton: false,
+                showCancelButton: true,
+                cancelButtonText: 'ביטול',
+                didOpen: () => {
+                    document.getElementById('uploadNewDraftBtn')?.addEventListener('click', () => Swal.close({ value: 'upload' }));
+                    document.getElementById('selectExistingDraftBtn')?.addEventListener('click', () => Swal.close({ value: 'select' }));
+                }
+            });
+            
+            if (action === 'upload') {
+                // העלה קבצים חדשים - נזכור שזו טיוטה
+                state.addToDraftAfterUpload = state.analysisData?.groupId;
+                document.getElementById('fileInput').click();
+                return;
+            }
+            
+            if (action !== 'select' || !pendingFiles.length) return;
+            
+            // בחר מקבצים קיימים
+            const { value: selectedIds, isConfirmed } = await Swal.fire({
+                title: 'בחר קבצים להוספה',
+                html: `
+                    <div class="text-right max-h-60 overflow-y-auto">
+                        ${pendingFiles.map(f => `
+                            <label class="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-lg cursor-pointer">
+                                <input type="checkbox" value="${f.id}" class="add-draft-file-checkbox w-5 h-5 accent-indigo-600">
+                                <div class="flex-1">
+                                    <p class="font-medium">${f.original_name}</p>
+                                    <p class="text-xs text-slate-400">${f.parsed_count?.toLocaleString() || 0} אנשי קשר</p>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'הוסף לטיוטה',
+                cancelButtonText: 'ביטול',
+                preConfirm: () => {
+                    const checked = document.querySelectorAll('.add-draft-file-checkbox:checked');
+                    if (!checked.length) {
+                        Swal.showValidationMessage('בחר לפחות קובץ אחד');
+                        return false;
+                    }
+                    return Array.from(checked).map(c => parseInt(c.value));
+                }
+            });
+            
+            if (!isConfirmed || !selectedIds?.length) return;
+            
+            // הוסף את הקבצים לטיוטה
+            await addSelectedFilesToDraft(selectedIds);
+        }
+
+        async function addSelectedFilesToDraft(fileIds) {
+            Swal.fire({
+                title: 'מוסיף קבצים...',
+                html: '<div class="w-full bg-slate-200 rounded-full h-4"><div class="bg-indigo-500 h-4 rounded-full animate-pulse" style="width: 50%"></div></div>',
+                allowOutsideClick: false,
+                showConfirmButton: false
+            });
+            
+            try {
+                // קרא ל-API שיוסיף את הקבצים החדשים לטיוטה
+                const result = await api('/api/draft/add-files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        groupId: state.analysisData?.groupId,
+                        fileIds: fileIds,
+                        existingData: state.analysisData
+                    })
+                });
+                
+                // עדכן את הסטייט עם הנתונים החדשים
+                state.analysisData = result;
+                
+                // רענן את התצוגה
+                updateAnalysisView(result);
+                showAnalysisTab('accepted');
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'הקבצים נוספו!',
+                    text: `נוספו ${result.addedCount?.toLocaleString() || 0} אנשי קשר חדשים`,
+                    timer: 2000
+                });
+            } catch (err) {
                 Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
             }
         }
