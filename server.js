@@ -408,50 +408,126 @@ function parseVcf(content) {
         
         let unfoldedCard = card.replace(/=\n/g, '').replace(/\n[ \t]/g, '');
         const lines = unfoldedCard.split('\n');
-        let entry = { Name: '', Phone: '', Email: '', OriginalData: {} };
-        let phones = [];
+        let name = '';
+        let email = '';
+        let phones = []; // { number, type }
+        let originalData = {};
 
         for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
             const upper = trimmed.toUpperCase();
+            const colonIdx = trimmed.indexOf(':');
+            const valueRaw = colonIdx > -1 ? trimmed.substring(colonIdx + 1).trim() : '';
+            const value = decodeVcfValue(valueRaw, upper);
             
+            // שם - בדוק כל האפשרויות
             if (upper.startsWith('FN:') || upper.startsWith('FN;')) {
-                let val = trimmed.substring(trimmed.indexOf(':') + 1).trim();
-                val = decodeVcfValue(val, upper);
-                if (val) entry.Name = val;
+                if (value) name = value;
             }
             else if ((upper.startsWith('N:') || upper.startsWith('N;')) && !upper.startsWith('NOTE') && !upper.startsWith('NICKNAME')) {
-                let val = trimmed.substring(trimmed.indexOf(':') + 1).trim();
-                val = decodeVcfValue(val, upper);
-                val = val.split(';').filter(part => part.trim()).join(' ');
-                if (val && !entry.Name) entry.Name = val;
+                const nameParts = value.split(';').filter(part => part.trim()).join(' ');
+                if (nameParts && !name) name = nameParts;
             }
-            else if (upper.startsWith('TEL:') || upper.startsWith('TEL;') || 
-                     upper.match(/^ITEM\d*\.TEL/) || upper.startsWith('X-TEL') ||
-                     upper.startsWith('X-PHONE') || upper.includes('.TEL:') || upper.includes('.TEL;')) {
+            else if (upper.startsWith('NICKNAME:') || upper.startsWith('NICKNAME;')) {
+                if (value && !name) name = value;
+            }
+            // טלפון - חיפוש מקיף בכל הפורמטים האפשריים
+            else if (
+                upper.startsWith('TEL:') || upper.startsWith('TEL;') || 
+                upper.match(/^ITEM\d*\.TEL/) || 
+                upper.startsWith('X-TEL') || upper.startsWith('X-PHONE') ||
+                upper.includes('.TEL:') || upper.includes('.TEL;') ||
+                upper.startsWith('PHONE:') || upper.startsWith('PHONE;') ||
+                upper.startsWith('X-MOBILE') || upper.startsWith('X-CELL') ||
+                upper.startsWith('X-MAIN-PHONE') || upper.startsWith('X-OTHER-PHONE') ||
+                upper.startsWith('X-WORK-PHONE') || upper.startsWith('X-HOME-PHONE') ||
+                upper.match(/^X-.*PHONE/) || upper.match(/^X-.*TEL/)
+            ) {
+                // חלץ את מספר הטלפון
                 let phoneVal = trimmed.substring(trimmed.lastIndexOf(':') + 1);
-                phoneVal = phoneVal.replace(/[^\d+]/g, '');
-                if (phoneVal) phones.push(phoneVal);
+                phoneVal = phoneVal.replace(/[^\d+\-\s\(\)]/g, '').replace(/[\s\-\(\)]/g, '');
                 
-                // שמור את כל הטלפונים ב-OriginalData
-                if (!entry.OriginalData.phones) entry.OriginalData.phones = [];
-                entry.OriginalData.phones.push(phoneVal);
+                // קבע את סוג הטלפון
+                let phoneType = 'טלפון';
+                if (upper.includes('CELL') || upper.includes('MOBILE')) phoneType = 'נייד';
+                else if (upper.includes('WORK')) phoneType = 'עבודה';
+                else if (upper.includes('HOME')) phoneType = 'בית';
+                else if (upper.includes('FAX')) phoneType = 'פקס';
+                else if (upper.includes('PAGER')) phoneType = 'איתורית';
+                else if (upper.includes('MAIN')) phoneType = 'ראשי';
+                else if (upper.includes('OTHER')) phoneType = 'אחר';
+                
+                if (phoneVal && phoneVal.length >= 4) {
+                    // בדוק שאין כפילות
+                    if (!phones.find(p => p.number === phoneVal)) {
+                        phones.push({ number: phoneVal, type: phoneType });
+                    }
+                }
             }
+            // אימייל
             else if (upper.startsWith('EMAIL:') || upper.startsWith('EMAIL;')) {
-                let emailVal = trimmed.substring(trimmed.indexOf(':') + 1).trim();
-                if (emailVal && !entry.Email) entry.Email = emailVal;
+                if (value && !email) email = value;
             }
+            // נתונים נוספים
             else if (upper.startsWith('ORG:') || upper.startsWith('ORG;')) {
-                entry.OriginalData.organization = trimmed.substring(trimmed.indexOf(':') + 1).trim();
+                originalData.organization = value;
+                // אם אין שם, נסה לקחת מהארגון
+                if (!name && value) name = value;
             }
             else if (upper.startsWith('NOTE:') || upper.startsWith('NOTE;')) {
-                entry.OriginalData.note = decodeVcfValue(trimmed.substring(trimmed.indexOf(':') + 1).trim(), upper);
+                originalData.note = value;
+                // חפש מספרי טלפון גם בהערות
+                const phoneMatches = value.match(/(\+?972[\d\-\s]{8,}|05\d[\d\-\s]{7,}|\d{9,})/g);
+                if (phoneMatches) {
+                    phoneMatches.forEach(pm => {
+                        const cleanPhone = pm.replace(/[\s\-]/g, '');
+                        if (cleanPhone.length >= 9 && !phones.find(p => p.number === cleanPhone)) {
+                            phones.push({ number: cleanPhone, type: 'מהערה' });
+                        }
+                    });
+                }
+            }
+            // חפש גם בשדות מותאמים אישית
+            else if (upper.startsWith('X-') && value) {
+                // שדות מותאמים שעשויים להכיל טלפון
+                const phoneMatch = value.match(/^(\+?[\d\-\s\(\)]{7,})$/);
+                if (phoneMatch) {
+                    const cleanPhone = phoneMatch[1].replace(/[\s\-\(\)]/g, '');
+                    if (cleanPhone.length >= 7 && !phones.find(p => p.number === cleanPhone)) {
+                        phones.push({ number: cleanPhone, type: 'שדה מותאם' });
+                    }
+                }
             }
         }
         
-        entry.Phone = phones.find(p => /^(\+?972|05)/.test(p)) || phones[0] || '';
-        if (entry.Phone || entry.Name) contacts.push(entry);
+        // שמור את כל הטלפונים המקוריים
+        originalData.allPhones = phones.map(p => ({ ...p }));
+        
+        // צור איש קשר נפרד לכל מספר טלפון
+        if (phones.length > 0) {
+            phones.forEach((phoneObj, idx) => {
+                contacts.push({
+                    Name: name || '',
+                    Phone: phoneObj.number,
+                    PhoneType: phoneObj.type,
+                    Email: email,
+                    OriginalData: { 
+                        ...originalData,
+                        phoneIndex: idx,
+                        totalPhones: phones.length
+                    }
+                });
+            });
+        } else if (name) {
+            // אין טלפון אבל יש שם - שמור בכל זאת (יידחה אח"כ עם סיבה)
+            contacts.push({
+                Name: name,
+                Phone: '',
+                Email: email,
+                OriginalData: originalData
+            });
+        }
     }
     
     return contacts;
@@ -1458,11 +1534,31 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
         if (req.params.type === 'csv') {
             out = "Name,Phone,Email\n";
             r.rows.forEach(c => {
-                out += `"${c.full_name}","${c.phone}","${c.email || ''}"\n`;
+                // בדוק אם יש מספרי טלפון מאוחדים
+                const mergedPhones = c.original_data?.mergedPhones;
+                if (mergedPhones && mergedPhones.length > 1) {
+                    mergedPhones.forEach(mp => {
+                        out += `"${c.full_name}","${mp.phone}","${c.email || ''}"\n`;
+                    });
+                } else {
+                    out += `"${c.full_name}","${c.phone}","${c.email || ''}"\n`;
+                }
             });
         } else {
             r.rows.forEach(c => {
-                out += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\nTEL;TYPE=CELL:${c.phone}\n`;
+                out += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\n`;
+                
+                // בדוק אם יש מספרי טלפון מאוחדים
+                const mergedPhones = c.original_data?.mergedPhones;
+                if (mergedPhones && mergedPhones.length > 1) {
+                    mergedPhones.forEach(mp => {
+                        const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
+                        out += `TEL;TYPE=${type}:${mp.phone}\n`;
+                    });
+                } else {
+                    out += `TEL;TYPE=CELL:${c.phone}\n`;
+                }
+                
                 if (c.email) out += `EMAIL:${c.email}\n`;
                 out += `END:VCARD\n`;
             });
@@ -1689,11 +1785,23 @@ app.get('/api/public/export/:token', async (req, res) => {
         const g = await pool.query('SELECT id, name FROM contact_groups WHERE share_token = $1', [req.params.token]);
         if (!g.rows[0]) return res.status(404).json({ error: 'Not found' });
         
-        const contacts = await pool.query('SELECT full_name, phone, email FROM contacts WHERE group_id = $1', [g.rows[0].id]);
+        const contacts = await pool.query('SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1', [g.rows[0].id]);
         
         let vcf = '';
         contacts.rows.forEach(c => {
-            vcf += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\nTEL;TYPE=CELL:${c.phone}\n`;
+            vcf += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\n`;
+            
+            // בדוק אם יש מספרי טלפון מאוחדים
+            const mergedPhones = c.original_data?.mergedPhones;
+            if (mergedPhones && mergedPhones.length > 1) {
+                mergedPhones.forEach(mp => {
+                    const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
+                    vcf += `TEL;TYPE=${type}:${mp.phone}\n`;
+                });
+            } else {
+                vcf += `TEL;TYPE=CELL:${c.phone}\n`;
+            }
+            
             if (c.email) vcf += `EMAIL:${c.email}\n`;
             vcf += `END:VCARD\n`;
         });

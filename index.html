@@ -404,6 +404,57 @@
         </div>
     </div>
 
+    <!-- Merge Contacts Modal -->
+    <div id="mergeModal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div class="glass-card rounded-3xl p-8 w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-black text-slate-800">➕ איחוד אנשי קשר</h3>
+                <button onclick="closeMergeModal()" class="text-3xl text-slate-400 hover:text-slate-600">&times;</button>
+            </div>
+            
+            <!-- איש הקשר הנוכחי -->
+            <div class="mb-6 p-4 bg-indigo-50 rounded-xl border-2 border-indigo-200">
+                <p class="text-sm text-indigo-600 font-semibold mb-2">איש קשר נוכחי:</p>
+                <div class="flex items-center gap-4">
+                    <span class="text-xl font-bold" id="mergeCurrentName"></span>
+                    <span class="font-mono text-slate-600" id="mergeCurrentPhone"></span>
+                </div>
+            </div>
+            
+            <!-- אנשי קשר שנבחרו לאיחוד -->
+            <div class="mb-6">
+                <p class="text-sm text-slate-600 font-semibold mb-2">מספרי טלפון לאיחוד:</p>
+                <div id="mergeSelectedContacts" class="space-y-2 max-h-40 overflow-auto"></div>
+            </div>
+            
+            <!-- חיפוש -->
+            <div class="mb-4">
+                <input type="text" id="mergeSearch" placeholder="חפש לפי שם או טלפון..." 
+                       class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                       oninput="filterMergeContacts(this.value)">
+            </div>
+            
+            <!-- רשימת אנשי קשר דומים -->
+            <div class="mb-6">
+                <p class="text-sm text-slate-600 font-semibold mb-2">אנשי קשר דומים (לחץ להוספה):</p>
+                <div id="mergeSimilarContacts" class="space-y-1 max-h-48 overflow-auto"></div>
+            </div>
+            
+            <!-- בחירת שם סופי -->
+            <div class="mb-6 p-4 bg-slate-50 rounded-xl">
+                <p class="text-sm text-slate-600 font-semibold mb-2">שם סופי לאיש הקשר המאוחד:</p>
+                <div id="mergeNameOptions" class="flex flex-wrap gap-2 mb-3"></div>
+                <input type="text" id="mergeFinalName" placeholder="או הקלד שם חדש..." 
+                       class="w-full px-4 py-2 rounded-lg border border-slate-200">
+            </div>
+            
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                <button onclick="closeMergeModal()" class="px-6 py-3 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200">ביטול</button>
+                <button onclick="performMerge()" class="btn-primary px-6 py-3 rounded-xl font-bold">🔗 אחד אנשי קשר</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mapping Modal -->
     <div id="mappingModal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
         <div class="glass-card rounded-3xl p-8 w-full max-w-4xl max-h-[90vh] overflow-auto">
@@ -436,7 +487,11 @@
             // מיון וסינון
             sortBy: 'index', // index, name, phone
             sortDir: 'asc',  // asc, desc
-            filterSource: '' // סינון לפי מקור
+            filterSource: '', // סינון לפי מקור
+            // איחוד אנשי קשר
+            mergeSourceIndex: null,
+            mergeSelectedIndexes: [],
+            mergePhoneLabels: {} // { phone: 'label' }
         };
         
         const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
@@ -1475,6 +1530,234 @@
             showAnalysisTab('accepted');
         }
 
+        // ==================== איחוד אנשי קשר ====================
+        function openMergeModal(index) {
+            const contact = state.analysisData?.allData?.[index];
+            if (!contact) return;
+            
+            state.mergeSourceIndex = index;
+            state.mergeSelectedIndexes = [index];
+            state.mergePhoneLabels = { [contact.phone]: contact.originalData?.PhoneType || 'נייד' };
+            
+            // הצג פרטי איש הקשר הנוכחי
+            document.getElementById('mergeCurrentName').textContent = contact.name || '(ללא שם)';
+            document.getElementById('mergeCurrentPhone').textContent = contact.phone;
+            
+            // הצג מספרים שנבחרו
+            renderMergeSelected();
+            
+            // מצא אנשי קשר דומים
+            findSimilarContacts(contact.name);
+            
+            // אתחל שדה שם סופי
+            document.getElementById('mergeFinalName').value = contact.name || '';
+            
+            document.getElementById('mergeModal').classList.remove('hidden');
+            document.getElementById('mergeSearch').value = '';
+            document.getElementById('mergeSearch').focus();
+        }
+        
+        function closeMergeModal() {
+            document.getElementById('mergeModal').classList.add('hidden');
+            state.mergeSourceIndex = null;
+            state.mergeSelectedIndexes = [];
+            state.mergePhoneLabels = {};
+        }
+        
+        function renderMergeSelected() {
+            const container = document.getElementById('mergeSelectedContacts');
+            const nameOptions = document.getElementById('mergeNameOptions');
+            const contacts = state.mergeSelectedIndexes.map(i => state.analysisData.allData[i]).filter(Boolean);
+            
+            // הצג מספרים שנבחרו עם תוויות
+            container.innerHTML = contacts.map((c, idx) => `
+                <div class="flex items-center gap-3 p-2 bg-white rounded-lg border ${idx === 0 ? 'border-indigo-300' : 'border-slate-200'}">
+                    <span class="font-medium flex-1">${c.name || '(ללא שם)'}</span>
+                    <span class="font-mono text-slate-600">${c.phone}</span>
+                    <select class="px-2 py-1 rounded border border-slate-200 text-sm" 
+                            onchange="state.mergePhoneLabels['${c.phone}'] = this.value">
+                        <option value="נייד" ${state.mergePhoneLabels[c.phone] === 'נייד' ? 'selected' : ''}>נייד</option>
+                        <option value="עבודה" ${state.mergePhoneLabels[c.phone] === 'עבודה' ? 'selected' : ''}>עבודה</option>
+                        <option value="בית" ${state.mergePhoneLabels[c.phone] === 'בית' ? 'selected' : ''}>בית</option>
+                        <option value="אחר" ${state.mergePhoneLabels[c.phone] === 'אחר' ? 'selected' : ''}>אחר</option>
+                    </select>
+                    ${idx > 0 ? `<button onclick="removeMergeContact(${state.mergeSelectedIndexes[idx]})" class="text-red-400 hover:text-red-600">✕</button>` : ''}
+                </div>
+            `).join('');
+            
+            // הצג אפשרויות שמות
+            const uniqueNames = [...new Set(contacts.map(c => c.name).filter(Boolean))];
+            nameOptions.innerHTML = uniqueNames.map(name => `
+                <button onclick="document.getElementById('mergeFinalName').value = '${name.replace(/'/g, "\\'")}'"
+                        class="px-3 py-1 bg-white border rounded-lg hover:bg-indigo-50 hover:border-indigo-300 text-sm">
+                    ${name}
+                </button>
+            `).join('');
+        }
+        
+        function findSimilarContacts(searchName) {
+            const container = document.getElementById('mergeSimilarContacts');
+            const allData = state.analysisData?.allData || [];
+            
+            // חפש אנשי קשר עם שמות דומים
+            const searchLower = (searchName || '').toLowerCase().trim();
+            const searchWords = searchLower.split(/\s+/).filter(w => w.length > 1);
+            
+            const similar = allData
+                .map((c, idx) => ({ ...c, idx }))
+                .filter(c => !state.mergeSelectedIndexes.includes(c.idx))
+                .map(c => {
+                    const nameLower = (c.name || '').toLowerCase();
+                    let score = 0;
+                    
+                    // התאמה מדויקת
+                    if (nameLower === searchLower) score += 100;
+                    // התחלה זהה
+                    else if (nameLower.startsWith(searchLower) || searchLower.startsWith(nameLower)) score += 50;
+                    // מילים משותפות
+                    else {
+                        searchWords.forEach(word => {
+                            if (nameLower.includes(word)) score += 20;
+                        });
+                    }
+                    
+                    return { ...c, score };
+                })
+                .filter(c => c.score > 0)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 30);
+            
+            container.innerHTML = similar.length ? similar.map(c => `
+                <div onclick="addMergeContact(${c.idx})" 
+                     class="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-indigo-50 hover:border-indigo-300">
+                    <span class="font-medium flex-1">${c.name || '(ללא שם)'}</span>
+                    <span class="font-mono text-slate-500 text-sm">${c.phone}</span>
+                    <span class="text-indigo-400">+</span>
+                </div>
+            `).join('') : '<p class="text-slate-400 text-center py-4">לא נמצאו אנשי קשר דומים</p>';
+        }
+        
+        function filterMergeContacts(query) {
+            const container = document.getElementById('mergeSimilarContacts');
+            const allData = state.analysisData?.allData || [];
+            const queryLower = query.toLowerCase().trim();
+            
+            if (!queryLower) {
+                // אם אין חיפוש, חזור לדומים
+                const sourceContact = state.analysisData?.allData?.[state.mergeSourceIndex];
+                findSimilarContacts(sourceContact?.name);
+                return;
+            }
+            
+            const filtered = allData
+                .map((c, idx) => ({ ...c, idx }))
+                .filter(c => !state.mergeSelectedIndexes.includes(c.idx))
+                .filter(c => {
+                    const nameLower = (c.name || '').toLowerCase();
+                    const phone = c.phone || '';
+                    return nameLower.includes(queryLower) || phone.includes(queryLower);
+                })
+                .slice(0, 50);
+            
+            container.innerHTML = filtered.length ? filtered.map(c => `
+                <div onclick="addMergeContact(${c.idx})" 
+                     class="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-indigo-50 hover:border-indigo-300">
+                    <span class="font-medium flex-1">${c.name || '(ללא שם)'}</span>
+                    <span class="font-mono text-slate-500 text-sm">${c.phone}</span>
+                    <span class="text-indigo-400">+</span>
+                </div>
+            `).join('') : '<p class="text-slate-400 text-center py-4">לא נמצאו תוצאות</p>';
+        }
+        
+        function addMergeContact(index) {
+            if (state.mergeSelectedIndexes.includes(index)) return;
+            
+            const contact = state.analysisData?.allData?.[index];
+            if (!contact) return;
+            
+            state.mergeSelectedIndexes.push(index);
+            state.mergePhoneLabels[contact.phone] = contact.originalData?.PhoneType || 'נייד';
+            
+            renderMergeSelected();
+            
+            // רענן את הרשימה הדומה
+            const query = document.getElementById('mergeSearch').value;
+            if (query) {
+                filterMergeContacts(query);
+            } else {
+                const sourceContact = state.analysisData?.allData?.[state.mergeSourceIndex];
+                findSimilarContacts(sourceContact?.name);
+            }
+            
+            Toast.fire({ icon: 'success', title: 'נוסף לאיחוד' });
+        }
+        
+        function removeMergeContact(index) {
+            state.mergeSelectedIndexes = state.mergeSelectedIndexes.filter(i => i !== index);
+            const contact = state.analysisData?.allData?.[index];
+            if (contact) delete state.mergePhoneLabels[contact.phone];
+            
+            renderMergeSelected();
+            
+            // רענן את הרשימה הדומה
+            const query = document.getElementById('mergeSearch').value;
+            if (query) {
+                filterMergeContacts(query);
+            } else {
+                const sourceContact = state.analysisData?.allData?.[state.mergeSourceIndex];
+                findSimilarContacts(sourceContact?.name);
+            }
+        }
+        
+        function performMerge() {
+            if (state.mergeSelectedIndexes.length < 2) {
+                return Toast.fire({ icon: 'warning', title: 'בחר לפחות 2 אנשי קשר לאיחוד' });
+            }
+            
+            const finalName = document.getElementById('mergeFinalName').value.trim();
+            if (!finalName) {
+                return Toast.fire({ icon: 'error', title: 'הזן שם לאיש הקשר המאוחד' });
+            }
+            
+            // אסוף את כל המספרים
+            const phones = state.mergeSelectedIndexes.map(idx => {
+                const contact = state.analysisData.allData[idx];
+                return {
+                    phone: contact.phone,
+                    label: state.mergePhoneLabels[contact.phone] || 'נייד'
+                };
+            });
+            
+            // עדכן את איש הקשר הראשון עם כל המספרים
+            const primaryIndex = state.mergeSelectedIndexes[0];
+            const primaryContact = state.analysisData.allData[primaryIndex];
+            primaryContact.name = finalName;
+            primaryContact.mergedPhones = phones;
+            primaryContact.originalData = primaryContact.originalData || {};
+            primaryContact.originalData.mergedFrom = state.mergeSelectedIndexes.map(idx => ({
+                name: state.analysisData.allData[idx].name,
+                phone: state.analysisData.allData[idx].phone
+            }));
+            
+            // הסר את שאר אנשי הקשר (מסמן אותם למחיקה)
+            const indexesToRemove = state.mergeSelectedIndexes.slice(1).sort((a, b) => b - a);
+            indexesToRemove.forEach(idx => {
+                state.analysisData.allData.splice(idx, 1);
+            });
+            
+            // עדכן סטטיסטיקות
+            document.getElementById('acceptedCount').textContent = state.analysisData.allData.length;
+            
+            closeMergeModal();
+            scheduleDraftSave();
+            showAnalysisTab('accepted');
+            
+            Toast.fire({ 
+                icon: 'success', 
+                title: `אוחדו ${phones.length} מספרים תחת "${finalName}"` 
+            });
+        }
+
         // שמירת טיוטה לשרת
         let saveDraftTimeout = null;
         async function saveDraft() {
@@ -1662,9 +1945,14 @@
                                                onchange="updateAnalysisName(${c.originalIndex}, this.value)"
                                                onkeydown="if(event.key==='Enter') this.blur()">
                                     </td>
-                                    <td class="px-4 py-2 font-mono text-slate-600">${c.phone}</td>
+                                    <td class="px-4 py-2 font-mono text-slate-600">
+                                        ${c.phone}
+                                        ${c.mergedPhones?.length > 1 ? `<span class="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full mr-1" title="${c.mergedPhones.map(p => p.phone + ' (' + p.label + ')').join(', ')}">${c.mergedPhones.length} מספרים</span>` : ''}
+                                        ${c.originalData?.totalPhones > 1 ? `<span class="text-xs text-slate-400" title="יש ${c.originalData.totalPhones} מספרים בקובץ המקור">📱${c.originalData.totalPhones}</span>` : ''}
+                                    </td>
                                     <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
-                                    <td class="px-4 py-2 text-center">
+                                    <td class="px-4 py-2 text-center flex gap-1 justify-center">
+                                        <button onclick="openMergeModal(${c.originalIndex})" class="text-indigo-400 hover:text-indigo-600 text-lg" title="אחד עם איש קשר אחר">➕</button>
                                         <button onclick="clearAnalysisName(${c.originalIndex})" class="text-red-400 hover:text-red-600 text-lg" title="מחק שם והוסף לרשימה שחורה">🗑️</button>
                                     </td>
                                 </tr>
