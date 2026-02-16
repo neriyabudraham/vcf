@@ -751,6 +751,16 @@ app.post('/api/analyze', auth, async (req, res) => {
             responseData = g.rows[0].draft_data;
             responseData.targetGroupName = g.rows[0].name;
             
+            // בדיקת כפילויות קיימות
+            const nameCount = {};
+            (responseData.allData || []).forEach(c => {
+                nameCount[c.name] = (nameCount[c.name] || 0) + 1;
+            });
+            const duplicates = Object.entries(nameCount).filter(([_, count]) => count > 1);
+            if (duplicates.length > 0) {
+                console.log(`[ANALYZE] Found ${duplicates.length} duplicate names in loaded draft:`, duplicates.slice(0, 10));
+            }
+            
             // רענן קאש של כללים
             nameRulesCache = null;
             cleaningRulesCache = null;
@@ -900,12 +910,18 @@ app.post('/api/analyze', auth, async (req, res) => {
             
             // וודא שמות ייחודיים
             const usedNames = new Set();
+            let uniqueChanges = 0;
             for (const contact of sortedData) {
+                const oldName = contact.name;
                 contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
+                if (oldName !== contact.name) {
+                    uniqueChanges++;
+                    console.log(`[UNIQUE] Changed: "${oldName}" → "${contact.name}"`);
+                }
             }
             responseData.allData = sortedData;
             
-            console.log('[ANALYZE] Re-applied cleaning rules to draft');
+            console.log(`[ANALYZE] Re-applied cleaning rules to draft. Unique name changes: ${uniqueChanges}`);
         } else {
             // עיבוד חדש
             const phoneMap = new Map();
