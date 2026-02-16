@@ -511,8 +511,17 @@
             // איחוד אנשי קשר
             mergeSourceIndex: null,
             mergeSelectedIndexes: [],
-            mergePhoneLabels: {} // { phone: 'label' }
+            mergePhoneLabels: {}, // { phone: 'label' }
+            customPhoneLabels: JSON.parse(localStorage.getItem('customPhoneLabels') || '[]') // תוויות מותאמות אישית
         };
+        
+        // פונקציה לחילוץ שם בסיסי (בלי (1), (2) וכו')
+        function getBaseName(name) {
+            if (!name) return '';
+            let base = name.toString().replace(/\s?\(\d+\)$/g, '').trim();
+            base = base.replace(/\s+\d+$/g, '').trim();
+            return base;
+        }
         
         const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, timerProgressBar: true });
 
@@ -1595,8 +1604,8 @@
             // מצא אנשי קשר דומים
             findSimilarContacts(contact.name);
             
-            // אתחל שדה שם סופי
-            document.getElementById('mergeFinalName').value = contact.name || '';
+            // אתחל שדה שם סופי - השתמש בשם בסיסי (בלי סיומות)
+            document.getElementById('mergeFinalName').value = getBaseName(contact.name) || contact.name || '';
             
             document.getElementById('mergeModal').classList.remove('hidden');
             document.getElementById('mergeSearch').value = '';
@@ -1615,8 +1624,16 @@
             const nameOptions = document.getElementById('mergeNameOptions');
             const contacts = state.mergeSelectedIndexes.map(i => state.analysisData.allData[i]).filter(Boolean);
             
+            // תוויות ברירת מחדל + מותאמות אישית
+            const defaultLabels = ['נייד', 'עבודה', 'בית'];
+            const allLabels = [...defaultLabels, ...state.customPhoneLabels.filter(l => !defaultLabels.includes(l)), 'אחר'];
+            
             // הצג מספרים שנבחרו עם תוויות ואפשרויות עריכה/הסרה
-            container.innerHTML = contacts.map((c, idx) => `
+            container.innerHTML = contacts.map((c, idx) => {
+                const currentLabel = state.mergePhoneLabels[c.phone] || 'נייד';
+                const isCustomLabel = !allLabels.includes(currentLabel) && currentLabel !== 'אחר';
+                
+                return `
                 <div class="flex items-center gap-2 p-3 bg-white rounded-lg border ${idx === 0 ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200'}">
                     <div class="flex-1">
                         <input type="text" 
@@ -1627,21 +1644,20 @@
                     </div>
                     <span class="font-mono text-slate-600 text-sm">${c.phone}</span>
                     <select class="px-2 py-1 rounded border border-slate-200 text-sm" 
-                            onchange="state.mergePhoneLabels['${c.phone}'] = this.value">
-                        <option value="נייד" ${state.mergePhoneLabels[c.phone] === 'נייד' ? 'selected' : ''}>נייד</option>
-                        <option value="עבודה" ${state.mergePhoneLabels[c.phone] === 'עבודה' ? 'selected' : ''}>עבודה</option>
-                        <option value="בית" ${state.mergePhoneLabels[c.phone] === 'בית' ? 'selected' : ''}>בית</option>
-                        <option value="אחר" ${state.mergePhoneLabels[c.phone] === 'אחר' ? 'selected' : ''}>אחר</option>
+                            onchange="handleLabelChange('${c.phone}', this.value)">
+                        ${allLabels.map(label => `<option value="${label}" ${currentLabel === label || (isCustomLabel && label === 'אחר') ? 'selected' : ''}>${label}</option>`).join('')}
+                        ${isCustomLabel ? `<option value="${currentLabel}" selected>${currentLabel}</option>` : ''}
                     </select>
                     <button onclick="removeMergeContact(${state.mergeSelectedIndexes[idx]})" 
                             class="text-red-400 hover:text-red-600 px-2 ${idx === 0 && contacts.length === 1 ? 'opacity-30 cursor-not-allowed' : ''}"
                             ${idx === 0 && contacts.length === 1 ? 'disabled' : ''}
                             title="${idx === 0 ? 'איש קשר ראשי' : 'הסר מהאיחוד'}">✕</button>
                 </div>
-            `).join('');
+            `}).join('');
             
-            // הצג אפשרויות שמות
-            const uniqueNames = [...new Set(contacts.map(c => c.name).filter(Boolean))];
+            // הצג אפשרויות שמות - שמות בסיסיים בלי סיומות
+            const baseNames = contacts.map(c => getBaseName(c.name)).filter(Boolean);
+            const uniqueNames = [...new Set(baseNames)];
             nameOptions.innerHTML = uniqueNames.map(name => `
                 <button onclick="document.getElementById('mergeFinalName').value = '${name.replace(/'/g, "\\'")}'"
                         class="px-3 py-1 bg-white border rounded-lg hover:bg-indigo-50 hover:border-indigo-300 text-sm">
@@ -1653,8 +1669,9 @@
         function editMergeContactName(index, newName) {
             if (state.analysisData?.allData?.[index]) {
                 state.analysisData.allData[index].name = newName;
-                // עדכן גם את השם המוצע
-                const uniqueNames = [...new Set(state.mergeSelectedIndexes.map(i => state.analysisData.allData[i]?.name).filter(Boolean))];
+                // עדכן גם את השם המוצע - שמות בסיסיים בלי סיומות
+                const baseNames = state.mergeSelectedIndexes.map(i => getBaseName(state.analysisData.allData[i]?.name)).filter(Boolean);
+                const uniqueNames = [...new Set(baseNames)];
                 const nameOptions = document.getElementById('mergeNameOptions');
                 nameOptions.innerHTML = uniqueNames.map(name => `
                     <button onclick="document.getElementById('mergeFinalName').value = '${name.replace(/'/g, "\\'")}'"
@@ -1662,6 +1679,38 @@
                         ${name}
                     </button>
                 `).join('');
+            }
+        }
+        
+        async function handleLabelChange(phone, value) {
+            if (value === 'אחר') {
+                // בקש תווית מותאמת אישית
+                const { value: customLabel } = await Swal.fire({
+                    title: 'הזן תווית מותאמת',
+                    input: 'text',
+                    inputPlaceholder: 'למשל: פקס, משרד, וכו...',
+                    showCancelButton: true,
+                    confirmButtonText: 'שמור',
+                    cancelButtonText: 'ביטול',
+                    inputValidator: (val) => !val && 'הזן שם לתווית'
+                });
+                
+                if (customLabel) {
+                    state.mergePhoneLabels[phone] = customLabel;
+                    
+                    // שמור לתוויות מותאמות אם לא קיים
+                    if (!state.customPhoneLabels.includes(customLabel)) {
+                        state.customPhoneLabels.push(customLabel);
+                        localStorage.setItem('customPhoneLabels', JSON.stringify(state.customPhoneLabels));
+                    }
+                    
+                    renderMergeSelected();
+                } else {
+                    // חזור לתווית הקודמת
+                    renderMergeSelected();
+                }
+            } else {
+                state.mergePhoneLabels[phone] = value;
             }
         }
         
@@ -1674,21 +1723,24 @@
             const sourcePhone = sourceContact?.phone || '';
             const sourcePhonePrefix = sourcePhone.slice(0, 6); // קידומת 6 ספרות
             
-            // חפש אנשי קשר עם שמות או מספרים דומים
-            const searchLower = (searchName || '').toLowerCase().trim();
+            // חפש לפי שם בסיסי (בלי סיומות מספריות)
+            const baseName = getBaseName(searchName || '');
+            const searchLower = baseName.toLowerCase().trim();
             const searchWords = searchLower.split(/\s+/).filter(w => w.length > 1);
             
             const similar = allData
                 .map((c, idx) => ({ ...c, idx }))
                 .filter(c => !state.mergeSelectedIndexes.includes(c.idx))
                 .map(c => {
-                    const nameLower = (c.name || '').toLowerCase();
+                    // השווה לפי שם בסיסי (בלי סיומות)
+                    const contactBaseName = getBaseName(c.name || '');
+                    const nameLower = contactBaseName.toLowerCase();
                     const phone = c.phone || '';
                     let score = 0;
                     let matchType = [];
                     
                     // === התאמת שם ===
-                    // התאמה מדויקת
+                    // התאמה מדויקת של השם הבסיסי
                     if (nameLower === searchLower) {
                         score += 100;
                         matchType.push('שם זהה');

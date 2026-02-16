@@ -890,11 +890,20 @@ app.post('/api/analyze', auth, async (req, res) => {
             // הסר קונפליקטים עם שם אחד בלבד (אחרי סינון שמות דיפולטיביים)
             responseData.conflicts = (responseData.conflicts || []).filter(c => c.names.length > 1);
             
+            // מיין לפי אורך טלפון - מספרים ארוכים קודם (כך שמספרים קצרים יקבלו סיומת)
+            const sortedData = (responseData.allData || []).sort((a, b) => {
+                const aLen = (a.phone || '').length;
+                const bLen = (b.phone || '').length;
+                // מספרים ארוכים (תקינים) קודם
+                return bLen - aLen;
+            });
+            
             // וודא שמות ייחודיים
             const usedNames = new Set();
-            for (const contact of responseData.allData || []) {
+            for (const contact of sortedData) {
                 contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
             }
+            responseData.allData = sortedData;
             
             console.log('[ANALYZE] Re-applied cleaning rules to draft');
         } else {
@@ -1077,8 +1086,14 @@ app.post('/api/analyze', auth, async (req, res) => {
 
             console.log(`[ANALYZE] Total stats:`, totalStats);
 
+            // מיין לפי אורך טלפון - מספרים ארוכים קודם
+            const allData = Array.from(phoneMap.values()).sort((a, b) => {
+                const aLen = (a.phone || '').length;
+                const bLen = (b.phone || '').length;
+                return bLen - aLen;
+            });
+            
             // וודא שמות ייחודיים
-            const allData = Array.from(phoneMap.values());
             const usedNames = new Set();
             for (const contact of allData) {
                 contact.name = await makeUniqueName(contact.name, usedNames, contact.phone);
