@@ -294,7 +294,7 @@ async function cleanName(name) {
     // Hebrew points (nikud): U+0591-U+05C7
     // Zero-width characters: U+200B-U+200F, U+FEFF
     // Various spaces: U+00A0, U+2000-U+200A
-    let result = name.toString()
+    let cleaned = name.toString()
         .replace(/[\u0591-\u05C7]/g, '') // ניקוד עברי
         .replace(/[\u200B-\u200F\uFEFF]/g, '') // zero-width characters
         .replace(/[\u00A0\u2000-\u200A]/g, ' ') // רווחים מיוחדים לרווח רגיל
@@ -304,7 +304,6 @@ async function cleanName(name) {
     // Force reload of rules each time to ensure fresh data
     await loadCleaningRules();
     const rules = cleaningRulesCache || [];
-    let cleaned = name;
     
     // עבור על כל כלל עד שאין שינוי
     let changed = true;
@@ -374,17 +373,17 @@ async function cleanName(name) {
         }
     }
     
-    const result = cleaned.trim();
+    const finalResult = cleaned.trim();
     
     // אם התוצאה היא רק מספר בסוגריים - החזר ריק
-    if (/^\s*\(\d+\)\s*$/.test(result)) return '';
+    if (/^\s*\(\d+\)\s*$/.test(finalResult)) return '';
     
     // אם השם קצר מדי - החזר ריק
     const nameRules = nameRulesCache || await loadNameRules();
     const minLength = nameRules.minLength ?? 2; // ברירת מחדל: 2 תווים
-    if (minLength > 0 && countRealChars(result) < minLength) return '';
+    if (minLength > 0 && countRealChars(finalResult) < minLength) return '';
     
-    return result;
+    return finalResult;
 }
 
 // בחירת השם הטוב ביותר מרשימה
