@@ -1046,8 +1046,38 @@
             }
         }
 
-        function exportGroup(type) {
-            window.location.href = `/api/export/${type}/${state.currentGroupId}`;
+        async function exportGroup(type) {
+            try {
+                const response = await fetch(`/api/export/${type}/${state.currentGroupId}`, {
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('שגיאה בהורדת הקובץ');
+                }
+                
+                const blob = await response.blob();
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = `contacts.${type}`;
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename="(.+)"/);
+                    if (match) filename = match[1];
+                }
+                
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                Toast.fire({ icon: 'success', title: 'הקובץ הורד בהצלחה' });
+            } catch (err) {
+                console.error('Export error:', err);
+                Swal.fire({ icon: 'error', title: 'שגיאה', text: err.message });
+            }
         }
 
         async function shareGroup() {
