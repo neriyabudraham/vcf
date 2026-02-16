@@ -1027,8 +1027,36 @@ app.post('/api/analyze', auth, async (req, res) => {
                 for (const row of rows) {
                     const rawPhone = row[item.mapping.phoneField];
                     const phoneResult = normalizePhone(rawPhone, phoneOptions);
+                    const email = row.Email || row.email || '';
                     
                     if (!phoneResult.normalized) {
+                        // אם יש מייל אבל אין טלפון - שמור את איש הקשר עם המייל
+                        if (email && email.includes('@')) {
+                            let name = await cleanName(item.mapping.nameFields.map(f => row[f] || '').join(' '));
+                            if (!name) name = email.split('@')[0];
+                            
+                            // צור מזהה ייחודי לאנשי קשר עם מייל (בלי טלפון)
+                            const emailKey = `email:${email.toLowerCase()}`;
+                            
+                            const contactData = {
+                                name,
+                                phone: '', // בלי טלפון
+                                email: email,
+                                sourceFile: file.original_name,
+                                sourceFileId: file.id,
+                                originalData: row.OriginalData || {},
+                                hasEmailOnly: true
+                            };
+                            
+                            if (!phoneMap.has(emailKey)) {
+                                phoneMap.set(emailKey, contactData);
+                                fileStats.valid++;
+                            } else {
+                                fileStats.duplicates++;
+                            }
+                            continue;
+                        }
+                        
                         fileStats.rejected++;
                         fileStats.rejectionReasons[phoneResult.reason] = (fileStats.rejectionReasons[phoneResult.reason] || 0) + 1;
                         totalStats.rejectionReasons[phoneResult.reason] = (totalStats.rejectionReasons[phoneResult.reason] || 0) + 1;
@@ -1037,6 +1065,7 @@ app.post('/api/analyze', auth, async (req, res) => {
                         rejectedContacts.push({
                             name: item.mapping.nameFields.map(f => row[f] || '').join(' ').trim() || '(ללא שם)',
                             phone: rawPhone || '',
+                            email: email || '',
                             reason: phoneResult.reason,
                             sourceFile: file.original_name,
                             sourceFileId: file.id,
@@ -1168,6 +1197,49 @@ app.post('/api/analyze', auth, async (req, res) => {
                 const bLen = (b.phone || '').length;
                 return bLen - aLen;
             });
+            
+            // בדוק קונפליקטים של אותו שם בין טלפון למייל
+            const nameToContacts = new Map();
+            for (const contact of allData) {
+                const normalizedName = normalizeNameForCompare(contact.name);
+                if (!nameToContacts.has(normalizedName)) {
+                    nameToContacts.set(normalizedName, []);
+                }
+                nameToContacts.get(normalizedName).push(contact);
+            }
+            
+            // מצא קונפליקטים בין אנשי קשר עם אותו שם - אחד עם טלפון ואחד עם מייל
+            for (const [normalizedName, contacts] of nameToContacts) {
+                if (contacts.length < 2) continue;
+                
+                const hasPhone = contacts.filter(c => c.phone);
+                const hasEmailOnly = contacts.filter(c => c.hasEmailOnly && c.email);
+                
+                if (hasPhone.length > 0 && hasEmailOnly.length > 0) {
+                    // יש קונפליקט - אותו שם, אחד עם טלפון ואחד עם מייל
+                    for (const emailContact of hasEmailOnly) {
+                        for (const phoneContact of hasPhone) {
+                            // יצירת קונפליקט מיוחד לאיחוד טלפון/מייל
+                            const conflictKey = `name:${normalizedName}`;
+                            let conf = conflicts.find(c => c.conflictKey === conflictKey);
+                            if (!conf) {
+                                conf = {
+                                    conflictKey,
+                                    conflictType: 'same_name_phone_email',
+                                    phone: phoneContact.phone,
+                                    email: emailContact.email,
+                                    names: [phoneContact.name, emailContact.name],
+                                    scores: [await scoreName(phoneContact.name), await scoreName(emailContact.name)],
+                                    sources: [phoneContact.sourceFile, emailContact.sourceFile],
+                                    autoSelected: phoneContact.name,
+                                    mergeOption: true // מראה שאפשר לאחד
+                                };
+                                conflicts.push(conf);
+                            }
+                        }
+                    }
+                }
+            }
             
             // וודא שמות ייחודיים
             const usedNames = new Set();
@@ -1804,7 +1876,7 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
                         const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
                         out += `TEL;TYPE=${type}:${mp.phone}\n`;
                     });
-                } else {
+                } else if (c.phone) {
                     out += `TEL;TYPE=CELL:${c.phone}\n`;
                 }
                 
@@ -2040,7 +2112,7 @@ app.get('/api/public/export/:token', async (req, res) => {
                     const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
                     vcf += `TEL;TYPE=${type}:${mp.phone}\n`;
                 });
-            } else {
+            } else if (c.phone) {
                 vcf += `TEL;TYPE=CELL:${c.phone}\n`;
             }
             
