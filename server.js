@@ -123,10 +123,21 @@ const normalizePhone = (p, options = {}) => {
 
 const getBaseName = (name) => {
     if (!name) return '';
-    // הסר (X) מהסוף
-    let base = name.toString().replace(/\s?\(\d+\)$/g, '').trim();
+    let base = name.toString();
+    
+    // הסר את כל הסיומות (X) מהסוף - כולל כפילויות כמו (1) (2) (3)
+    let prevBase;
+    do {
+        prevBase = base;
+        base = base.replace(/\s*\(\d+\)\s*$/g, '').trim();
+    } while (base !== prevBase);
+    
     // הסר מספרים מהסוף (כמו "דוד 13" -> "דוד")
     base = base.replace(/\s+\d+$/g, '').trim();
+    
+    // הסר גם סיומות בפורמטים אחרים כמו "- 1", "_ 2"
+    base = base.replace(/\s*[-_]\s*\d+$/g, '').trim();
+    
     return base;
 };
 
