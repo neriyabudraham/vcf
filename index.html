@@ -2330,20 +2330,41 @@
             // נרמל את המספר
             newPhone = newPhone.replace(/[^\d+]/g, '').trim();
             
-            if (!newPhone) {
-                Toast.fire({ icon: 'error', title: 'מספר טלפון לא יכול להיות ריק' });
+            if (!newPhone && !contact.email) {
+                Toast.fire({ icon: 'error', title: 'מספר טלפון לא יכול להיות ריק (אלא אם יש מייל)' });
                 return;
             }
             
             // בדוק כפילויות
-            const duplicate = state.analysisData.allData.find((c, i) => i !== index && c.phone === newPhone);
-            if (duplicate) {
-                Toast.fire({ icon: 'warning', title: 'מספר זה כבר קיים', text: `שייך ל: ${duplicate.name}` });
-                return;
+            if (newPhone) {
+                const duplicate = state.analysisData.allData.find((c, i) => i !== index && c.phone === newPhone);
+                if (duplicate) {
+                    Toast.fire({ icon: 'warning', title: 'מספר זה כבר קיים', text: `שייך ל: ${duplicate.name}` });
+                    return;
+                }
             }
             
             contact.phone = newPhone;
-            Toast.fire({ icon: 'success', title: 'מספר הטלפון עודכן' });
+            contact.hasEmailOnly = !newPhone && contact.email;
+            Toast.fire({ icon: 'success', title: newPhone ? 'מספר הטלפון עודכן' : 'הטלפון הוסר' });
+            scheduleDraftSave();
+        }
+
+        function updateAnalysisEmail(index, newEmail) {
+            if (!state.analysisData?.allData?.[index]) return;
+            
+            const contact = state.analysisData.allData[index];
+            newEmail = newEmail.trim();
+            
+            // וידוא פורמט מייל
+            if (newEmail && !newEmail.includes('@')) {
+                Toast.fire({ icon: 'error', title: 'כתובת מייל לא תקינה' });
+                return;
+            }
+            
+            contact.email = newEmail;
+            contact.hasEmailOnly = !contact.phone && newEmail;
+            Toast.fire({ icon: 'success', title: newEmail ? 'המייל עודכן' : 'המייל הוסר' });
             scheduleDraftSave();
         }
 
@@ -2446,7 +2467,11 @@
                                         ${c.originalData?.totalPhones > 1 ? `<span class="text-xs text-slate-400" title="יש ${c.originalData.totalPhones} מספרים בקובץ המקור">📱${c.originalData.totalPhones}</span>` : ''}`}
                                     </td>
                                     <td class="px-4 py-1 text-sm">
-                                        ${c.email ? `<span class="text-purple-600">${c.email}</span>` : '<span class="text-slate-300">-</span>'}
+                                        <input type="email" value="${(c.email || '').replace(/"/g, '&quot;')}" 
+                                               placeholder="הוסף מייל..."
+                                               class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-purple-500 outline-none bg-transparent text-purple-600 text-sm"
+                                               onchange="updateAnalysisEmail(${c.originalIndex}, this.value)"
+                                               onkeydown="if(event.key==='Enter') this.blur()">
                                     </td>
                                     <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
                                     <td class="px-4 py-2 text-center flex gap-1 justify-center">

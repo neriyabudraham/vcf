@@ -523,9 +523,15 @@ function parseVcf(content) {
                     }
                 }
             }
-            // אימייל
-            else if (upper.startsWith('EMAIL:') || upper.startsWith('EMAIL;')) {
-                if (value && !email) email = value;
+            // אימייל - כל הפורמטים כולל item1.EMAIL
+            else if (upper.startsWith('EMAIL:') || upper.startsWith('EMAIL;') || 
+                     upper.match(/^ITEM\d*\.EMAIL/) || upper.includes('.EMAIL:') || upper.includes('.EMAIL;')) {
+                if (value && value.includes('@') && !email) email = value;
+            }
+            // קטגוריות
+            else if (upper.startsWith('CATEGORIES:') || upper.startsWith('CATEGORIES;')) {
+                originalData.categories = value;
+                originalData['קטגוריות'] = value;
             }
             // נתונים נוספים - שמור הכל לצורך מיפוי ידני
             else if (upper.startsWith('ORG:') || upper.startsWith('ORG;')) {
@@ -565,12 +571,24 @@ function parseVcf(content) {
                 }
             }
             // חפש גם בשדות מותאמים אישית
-            else if (upper.startsWith('X-') && value) {
+            else if (upper.startsWith('X-') || upper.match(/^ITEM\d*\./)) {
                 // שמור את השדה המותאם
-                const fieldName = trimmed.substring(0, colonIdx).replace(/^X-/i, '').replace(/;.*$/, '');
-                originalData[`X-${fieldName}`] = value;
+                const fieldName = trimmed.substring(0, colonIdx).replace(/^X-/i, '').replace(/^ITEM\d*\./i, '').replace(/;.*$/, '');
+                if (value) originalData[fieldName] = value;
                 
-                // שדות מותאמים שעשויים להכיל טלפון
+                // חפש טלפון בכל השורה - כולל בתוך פרמטרים
+                const fullLine = trimmed;
+                const phonePatterns = fullLine.match(/(\+972[\s\-]?\d{1,2}[\s\-]?\d{3}[\s\-]?\d{4}|\+972\d{9,10}|05\d[\s\-]?\d{3,4}[\s\-]?\d{4}|05\d{8})/g);
+                if (phonePatterns) {
+                    phonePatterns.forEach(pm => {
+                        const cleanPhone = pm.replace(/[\s\-]/g, '');
+                        if (cleanPhone.length >= 9 && !phones.find(p => p.number === cleanPhone)) {
+                            phones.push({ number: cleanPhone, type: 'שדה מותאם' });
+                        }
+                    });
+                }
+                
+                // בדוק גם אם הערך עצמו הוא מספר טלפון
                 const phoneMatch = value.match(/^(\+?[\d\-\s\(\)]{7,})$/);
                 if (phoneMatch) {
                     const cleanPhone = phoneMatch[1].replace(/[\s\-\(\)]/g, '');
@@ -579,11 +597,23 @@ function parseVcf(content) {
                     }
                 }
             }
-            // שמור כל שדה אחר שאולי יועיל
-            else if (colonIdx > 0 && value && !upper.startsWith('VERSION') && !upper.startsWith('PRODID') && !upper.startsWith('REV') && !upper.startsWith('UID')) {
+            // שמור כל שדה אחר שאולי יועיל וחפש טלפונים
+            else if (colonIdx > 0 && !upper.startsWith('VERSION') && !upper.startsWith('PRODID') && !upper.startsWith('REV') && !upper.startsWith('UID') && !upper.startsWith('END')) {
                 const fieldKey = trimmed.substring(0, colonIdx).replace(/;.*$/, '');
-                if (!originalData[fieldKey]) {
+                if (value && !originalData[fieldKey]) {
                     originalData[fieldKey] = value;
+                }
+                
+                // חפש טלפונים גם בשורות אחרות
+                const fullLine = trimmed;
+                const phonePatterns = fullLine.match(/(\+972[\s\-]?\d{1,2}[\s\-]?\d{3}[\s\-]?\d{4}|\+972\d{9,10}|05\d[\s\-]?\d{3,4}[\s\-]?\d{4}|05\d{8})/g);
+                if (phonePatterns) {
+                    phonePatterns.forEach(pm => {
+                        const cleanPhone = pm.replace(/[\s\-]/g, '');
+                        if (cleanPhone.length >= 9 && !phones.find(p => p.number === cleanPhone)) {
+                            phones.push({ number: cleanPhone, type: 'נמצא אוטומטית' });
+                        }
+                    });
                 }
             }
         }
@@ -1881,6 +1911,7 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
                 }
                 
                 if (c.email) out += `EMAIL:${c.email}\n`;
+                if (c.original_data?.categories) out += `CATEGORIES:${c.original_data.categories}\n`;
                 out += `END:VCARD\n`;
             });
         }
@@ -2117,6 +2148,7 @@ app.get('/api/public/export/:token', async (req, res) => {
             }
             
             if (c.email) vcf += `EMAIL:${c.email}\n`;
+            if (c.original_data?.categories) vcf += `CATEGORIES:${c.original_data.categories}\n`;
             vcf += `END:VCARD\n`;
         });
         
