@@ -527,14 +527,32 @@ function parseVcf(content) {
             else if (upper.startsWith('EMAIL:') || upper.startsWith('EMAIL;')) {
                 if (value && !email) email = value;
             }
-            // נתונים נוספים
+            // נתונים נוספים - שמור הכל לצורך מיפוי ידני
             else if (upper.startsWith('ORG:') || upper.startsWith('ORG;')) {
                 originalData.organization = value;
+                originalData['ארגון'] = value;
                 // אם אין שם, נסה לקחת מהארגון
                 if (!name && value) name = value;
             }
+            else if (upper.startsWith('TITLE:') || upper.startsWith('TITLE;')) {
+                originalData.title = value;
+                originalData['תפקיד'] = value;
+            }
+            else if (upper.startsWith('ADR:') || upper.startsWith('ADR;')) {
+                originalData.address = value.replace(/;/g, ', ');
+                originalData['כתובת'] = value.replace(/;/g, ', ');
+            }
+            else if (upper.startsWith('BDAY:') || upper.startsWith('BDAY;')) {
+                originalData.birthday = value;
+                originalData['יום הולדת'] = value;
+            }
+            else if (upper.startsWith('URL:') || upper.startsWith('URL;')) {
+                originalData.url = value;
+                originalData['אתר'] = value;
+            }
             else if (upper.startsWith('NOTE:') || upper.startsWith('NOTE;')) {
                 originalData.note = value;
+                originalData['הערה'] = value;
                 // חפש מספרי טלפון גם בהערות
                 const phoneMatches = value.match(/(\+?972[\d\-\s]{8,}|05\d[\d\-\s]{7,}|\d{9,})/g);
                 if (phoneMatches) {
@@ -548,6 +566,10 @@ function parseVcf(content) {
             }
             // חפש גם בשדות מותאמים אישית
             else if (upper.startsWith('X-') && value) {
+                // שמור את השדה המותאם
+                const fieldName = trimmed.substring(0, colonIdx).replace(/^X-/i, '').replace(/;.*$/, '');
+                originalData[`X-${fieldName}`] = value;
+                
                 // שדות מותאמים שעשויים להכיל טלפון
                 const phoneMatch = value.match(/^(\+?[\d\-\s\(\)]{7,})$/);
                 if (phoneMatch) {
@@ -555,6 +577,13 @@ function parseVcf(content) {
                     if (cleanPhone.length >= 7 && !phones.find(p => p.number === cleanPhone)) {
                         phones.push({ number: cleanPhone, type: 'שדה מותאם' });
                     }
+                }
+            }
+            // שמור כל שדה אחר שאולי יועיל
+            else if (colonIdx > 0 && value && !upper.startsWith('VERSION') && !upper.startsWith('PRODID') && !upper.startsWith('REV') && !upper.startsWith('UID')) {
+                const fieldKey = trimmed.substring(0, colonIdx).replace(/;.*$/, '');
+                if (!originalData[fieldKey]) {
+                    originalData[fieldKey] = value;
                 }
             }
         }

@@ -503,9 +503,10 @@
             currentPage: 1,
             analysisPage: 1,
             rejectedPage: 1,
+            filterRejectedReason: '',
             addToGroupAfterUpload: null,
             // מיון וסינון - טיוטה
-            sortBy: 'index', // index, name, phone
+            sortBy: 'name', // index, name, phone
             sortDir: 'asc',  // asc, desc
             filterSource: '', // סינון לפי מקור
             // מיון - רשימה סופית
@@ -1568,6 +1569,101 @@
             showAnalysisTab('rejected');
         }
         
+        function setFilterRejectedReason(reason) {
+            state.filterRejectedReason = reason;
+            state.rejectedPage = 1;
+            showAnalysisTab('rejected');
+        }
+        
+        function showRejectedData(idx) {
+            const filterReason = state.filterRejectedReason || '';
+            const filtered = filterReason 
+                ? (state.analysisData.rejectedContacts || []).filter(c => c.reason === filterReason)
+                : (state.analysisData.rejectedContacts || []);
+            const contact = filtered[idx];
+            if (!contact) return;
+            
+            // הצג את כל הנתונים המקוריים
+            const originalData = contact.originalData || {};
+            const dataHtml = Object.entries(originalData)
+                .filter(([k, v]) => v && v.toString().trim())
+                .map(([k, v]) => `<div class="flex gap-2 p-2 bg-slate-50 rounded"><span class="font-semibold text-slate-600 min-w-[100px]">${k}:</span><span class="text-slate-800 break-all">${v}</span></div>`)
+                .join('');
+            
+            Swal.fire({
+                title: 'נתונים מקוריים',
+                html: `
+                    <div class="text-right max-h-96 overflow-auto space-y-1">
+                        <p class="text-sm text-slate-500 mb-3">אלו הנתונים כפי שנקראו מהקובץ. חפש מספר טלפון והעתק אותו לשדה הטלפון.</p>
+                        ${dataHtml || '<p class="text-slate-400">אין נתונים נוספים</p>'}
+                    </div>
+                `,
+                width: 600,
+                confirmButtonText: 'סגור'
+            });
+        }
+        
+        function restoreRejected(idx) {
+            const filterReason = state.filterRejectedReason || '';
+            const filtered = filterReason 
+                ? (state.analysisData.rejectedContacts || []).filter(c => c.reason === filterReason)
+                : (state.analysisData.rejectedContacts || []);
+            const contact = filtered[idx];
+            if (!contact) return;
+            
+            // קבל את הטלפון מהשדה
+            const phoneInput = document.getElementById(`rejected-phone-${idx}`);
+            let phone = phoneInput?.value?.replace(/[^\d+]/g, '').trim() || contact.phone || '';
+            
+            if (!phone || phone.length < 3) {
+                Toast.fire({ icon: 'error', title: 'הזן מספר טלפון תקין' });
+                phoneInput?.focus();
+                return;
+            }
+            
+            // בדוק כפילויות
+            const duplicate = state.analysisData.allData.find(c => c.phone === phone);
+            if (duplicate) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'מספר קיים',
+                    text: `המספר ${phone} כבר שייך ל: ${duplicate.name}. האם לדרוס?`,
+                    showCancelButton: true,
+                    confirmButtonText: 'כן, עדכן',
+                    cancelButtonText: 'ביטול'
+                }).then(result => {
+                    if (result.isConfirmed) {
+                        // עדכן את הקיים
+                        duplicate.name = contact.name || duplicate.name;
+                        removeFromRejected(contact);
+                    }
+                });
+                return;
+            }
+            
+            // הוסף לרשימה המאושרת
+            state.analysisData.allData.push({
+                name: contact.name || `איש קשר ${phone.slice(-4)}`,
+                phone: phone,
+                email: contact.email || '',
+                sourceFile: contact.sourceFile || '',
+                sourceFileId: contact.sourceFileId,
+                originalData: contact.originalData || {}
+            });
+            
+            removeFromRejected(contact);
+            Toast.fire({ icon: 'success', title: 'איש הקשר שוחזר!' });
+        }
+        
+        function removeFromRejected(contact) {
+            const idx = state.analysisData.rejectedContacts.indexOf(contact);
+            if (idx > -1) {
+                state.analysisData.rejectedContacts.splice(idx, 1);
+            }
+            scheduleDraftSave();
+            showAnalysisTab('rejected');
+        }
+        
         // מיון
         function setSort(field) {
             if (state.sortBy === field) {
@@ -2224,6 +2320,32 @@
             // קרא לפונקציה הכללית עם שם ריק
             await updateAnalysisName(index, '');
         }
+        
+        function updateAnalysisPhone(index, newPhone) {
+            if (!state.analysisData?.allData?.[index]) return;
+            
+            const contact = state.analysisData.allData[index];
+            const oldPhone = contact.phone;
+            
+            // נרמל את המספר
+            newPhone = newPhone.replace(/[^\d+]/g, '').trim();
+            
+            if (!newPhone) {
+                Toast.fire({ icon: 'error', title: 'מספר טלפון לא יכול להיות ריק' });
+                return;
+            }
+            
+            // בדוק כפילויות
+            const duplicate = state.analysisData.allData.find((c, i) => i !== index && c.phone === newPhone);
+            if (duplicate) {
+                Toast.fire({ icon: 'warning', title: 'מספר זה כבר קיים', text: `שייך ל: ${duplicate.name}` });
+                return;
+            }
+            
+            contact.phone = newPhone;
+            Toast.fire({ icon: 'success', title: 'מספר הטלפון עודכן' });
+            scheduleDraftSave();
+        }
 
         function showAnalysisTab(tab) {
             document.querySelectorAll('.analysis-tab').forEach(t => {
@@ -2313,8 +2435,11 @@
                                                onchange="updateAnalysisName(${c.originalIndex}, this.value)"
                                                onkeydown="if(event.key==='Enter') this.blur()">
                                     </td>
-                                    <td class="px-4 py-2 font-mono text-slate-600">
-                                        ${c.phone}
+                                    <td class="px-4 py-1 font-mono text-slate-600">
+                                        <input type="text" value="${(c.phone || '').replace(/"/g, '&quot;')}" 
+                                               class="w-full px-2 py-1 rounded border border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none bg-transparent text-sm"
+                                               onchange="updateAnalysisPhone(${c.originalIndex}, this.value)"
+                                               onkeydown="if(event.key==='Enter') this.blur()">
                                         ${c.mergedPhones?.length > 1 ? `<span class="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full mr-1" title="${c.mergedPhones.map(p => p.phone + ' (' + p.label + ')').join(', ')}">${c.mergedPhones.length} מספרים</span>` : ''}
                                         ${c.originalData?.totalPhones > 1 ? `<span class="text-xs text-slate-400" title="יש ${c.originalData.totalPhones} מספרים בקובץ המקור">📱${c.originalData.totalPhones}</span>` : ''}
                                     </td>
@@ -2332,24 +2457,37 @@
                 const reasons = {};
                 (data.rejectedContacts || []).forEach(c => { reasons[c.reason] = (reasons[c.reason] || 0) + 1; });
                 
+                // סנן לפי סיבה
+                const filterReason = state.filterRejectedReason || '';
+                const filtered = filterReason 
+                    ? (data.rejectedContacts || []).filter(c => c.reason === filterReason)
+                    : (data.rejectedContacts || []);
+                
                 const page = state.rejectedPage || 1;
                 const perPage = 500;
                 const start = (page - 1) * perPage;
                 const end = start + perPage;
-                const totalPages = Math.ceil((data.rejectedContacts?.length || 0) / perPage);
+                const totalPages = Math.ceil(filtered.length / perPage);
                 
                 content.innerHTML = `
                     <div class="grid grid-cols-4 gap-3 mb-6">
                         ${Object.entries(reasons).map(([reason, count]) => `
-                            <div class="bg-red-50 rounded-xl p-3 text-center">
+                            <div class="bg-red-50 rounded-xl p-3 text-center cursor-pointer hover:bg-red-100 ${filterReason === reason ? 'ring-2 ring-red-400' : ''}" 
+                                 onclick="setFilterRejectedReason('${filterReason === reason ? '' : reason}')">
                                 <p class="text-xl font-bold text-red-600">${count.toLocaleString()}</p>
                                 <p class="text-xs text-slate-500">${getReasonText(reason)}</p>
                             </div>
                         `).join('')}
                     </div>
+                    
+                    <div class="bg-amber-50 rounded-xl p-4 mb-4">
+                        <p class="text-amber-800 font-semibold">💡 טיפ: אפשר להזין מספר טלפון ידנית ולשחזר איש קשר לרשימה</p>
+                    </div>
+                    
                     <div class="flex justify-between items-center mb-4">
-                        <p class="text-slate-600">מציג ${start + 1}-${Math.min(end, data.rejectedContacts?.length || 0)} מתוך <strong>${(data.rejectedContacts?.length || 0).toLocaleString()}</strong></p>
+                        <p class="text-slate-600">מציג ${start + 1}-${Math.min(end, filtered.length)} מתוך <strong>${filtered.length.toLocaleString()}</strong> ${filterReason ? `(${getReasonText(filterReason)})` : ''}</p>
                         <div class="flex gap-2">
+                            ${filterReason ? `<button onclick="setFilterRejectedReason('')" class="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm hover:bg-red-200">✕ הצג הכל</button>` : ''}
                             ${page > 1 ? `<button onclick="rejectedPageChange(${page - 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">◀ הקודם</button>` : ''}
                             <span class="px-4 py-2 bg-red-100 text-red-700 rounded-lg font-bold">עמוד ${page} / ${totalPages || 1}</span>
                             ${page < totalPages ? `<button onclick="rejectedPageChange(${page + 1})" class="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200">הבא ▶</button>` : ''}
@@ -2359,16 +2497,27 @@
                         <table class="w-full">
                             <thead class="bg-slate-50 sticky top-0"><tr>
                                 <th class="px-4 py-3 text-right font-semibold">שם</th>
-                                <th class="px-4 py-3 text-right font-semibold">טלפון מקורי</th>
+                                <th class="px-4 py-3 text-right font-semibold">טלפון</th>
                                 <th class="px-4 py-3 text-right font-semibold">סיבת דחייה</th>
-                                <th class="px-4 py-3 text-right font-semibold">מקור</th>
+                                <th class="px-4 py-3 text-right font-semibold">נתונים נוספים</th>
+                                <th class="px-4 py-3 text-center font-semibold">פעולות</th>
                             </tr></thead>
-                            <tbody>${(data.rejectedContacts || []).slice(start, end).map(c => `
-                                <tr class="border-b border-slate-100">
-                                    <td class="px-4 py-2">${c.name}</td>
-                                    <td class="px-4 py-2 font-mono text-slate-600">${c.phone || '(ריק)'}</td>
+                            <tbody>${filtered.slice(start, end).map((c, i) => `
+                                <tr class="border-b border-slate-100" id="rejected-row-${start + i}">
+                                    <td class="px-4 py-2">${c.name || '(ללא שם)'}</td>
+                                    <td class="px-4 py-1">
+                                        <input type="text" value="${(c.phone || '').replace(/"/g, '&quot;')}" 
+                                               placeholder="הזן מספר טלפון..."
+                                               class="w-full px-2 py-1 rounded border border-slate-300 focus:border-indigo-500 outline-none text-sm font-mono"
+                                               id="rejected-phone-${start + i}">
+                                    </td>
                                     <td class="px-4 py-2"><span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">${getReasonText(c.reason)}</span></td>
-                                    <td class="px-4 py-2 text-slate-400 text-sm">${c.sourceFile || ''}</td>
+                                    <td class="px-4 py-2 text-xs text-slate-400 max-w-xs">
+                                        <button onclick="showRejectedData(${start + i})" class="text-indigo-500 hover:underline">📋 הצג נתונים</button>
+                                    </td>
+                                    <td class="px-4 py-2 text-center">
+                                        <button onclick="restoreRejected(${start + i})" class="px-3 py-1 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200">✅ שחזר</button>
+                                    </td>
                                 </tr>
                             `).join('')}</tbody>
                         </table>
