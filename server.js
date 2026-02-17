@@ -2147,7 +2147,9 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
         if (size > 0) {
             safeFilename += `_${batchNum + 1}`;
         }
-        res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}.${req.params.type}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}.${req.params.type}`);
+        // filename must be ASCII only, use filename* for UTF-8
+        const asciiFilename = `contacts${size > 0 ? '_' + (batchNum + 1) : ''}.${req.params.type}`;
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}.${req.params.type}`);
         res.send('\ufeff' + out);
     } catch (err) {
         console.error('[EXPORT] Error:', err);
@@ -2384,7 +2386,8 @@ app.get('/api/public/export/:token', async (req, res) => {
         });
         
         res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${g.rows[0].name}.vcf"`);
+        const groupName = g.rows[0].name || 'contacts';
+        res.setHeader('Content-Disposition', `attachment; filename="contacts.vcf"; filename*=UTF-8''${encodeURIComponent(groupName)}.vcf`);
         res.send('\ufeff' + vcf);
     } catch (err) {
         res.status(500).json({ error: err.message });
