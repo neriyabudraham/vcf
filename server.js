@@ -883,6 +883,10 @@ app.delete('/api/files/:id', auth, async (req, res) => {
 // ==================== ANALYZE & PROCESS ====================
 
 app.post('/api/analyze', auth, async (req, res) => {
+    // הגדל timeout ל-10 דקות לייבוא גדול
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    
     const { processingData, defaultName, startSerial, groupId, targetGroupName, addToGroupId, allowShortPhones } = req.body;
     const phoneOptions = { allowShort: allowShortPhones || false };
     
@@ -1400,6 +1404,10 @@ app.post('/api/draft/:id/save', auth, async (req, res) => {
 
 // הוספת קבצים לטיוטה
 app.post('/api/draft/add-files', auth, async (req, res) => {
+    // הגדל timeout ל-10 דקות
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    
     try {
         const { groupId, fileIds, existingData } = req.body;
         console.log(`[DRAFT ADD FILES] Adding ${fileIds?.length} files to draft ${groupId}`);
@@ -1580,6 +1588,10 @@ app.post('/api/draft/add-files', auth, async (req, res) => {
 // ==================== FINALIZE GROUP ====================
 
 app.post('/api/finalize', auth, async (req, res) => {
+    // הגדל timeout ל-10 דקות לשמירת רשימות גדולות
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    
     const { groupId, groupName, contacts, fileIds, stats, analysisData } = req.body;
     
     console.log(`[FINALIZE] Starting: groupId=${groupId}, contacts=${contacts?.length}, groupName=${groupName}`);
@@ -1850,6 +1862,9 @@ app.delete('/api/groups/:id', auth, async (req, res) => {
 
 // החזרת רשימה שמורה למצב טיוטה
 app.post('/api/groups/:id/revert-to-draft', auth, async (req, res) => {
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    
     try {
         const groupId = req.params.id;
         console.log(`[REVERT] Starting revert to draft for group ${groupId}`);
