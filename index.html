@@ -1055,32 +1055,31 @@
             const groupData = await api(`/api/groups/${state.currentGroupId}`);
             const totalContacts = groupData.contactsCount || 0;
             
-            // אם יש הרבה אנשי קשר, הצע הורדה בקבוצות
-            if (totalContacts > 5000) {
-                const { value: choice } = await Swal.fire({
-                    title: 'הורדת אנשי קשר',
-                    html: `
-                        <p class="mb-4">יש ${totalContacts.toLocaleString()} אנשי קשר ברשימה.</p>
-                        <p class="mb-4">איך תרצה להוריד?</p>
-                        <div class="space-y-3">
-                            <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="exportChoice" value="all" checked class="w-4 h-4">
-                                <span>הכל בקובץ אחד</span>
-                            </label>
-                            <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="exportChoice" value="batches" class="w-4 h-4">
-                                <span>בקבוצות</span>
-                            </label>
-                            <div id="batchSizeContainer" class="hidden mr-6">
-                                <label class="block text-sm text-slate-600 mb-1">גודל קבוצה:</label>
-                                <input type="number" id="batchSizeInput" value="10000" min="1000" max="50000" step="1000" 
-                                       class="w-full px-3 py-2 border rounded-lg">
-                            </div>
+            // תמיד הצע אפשרות הורדה בקבוצות
+            const { value: choice } = await Swal.fire({
+                title: 'הורדת אנשי קשר',
+                html: `
+                    <p class="mb-4">יש ${totalContacts.toLocaleString()} אנשי קשר ברשימה.</p>
+                    <p class="mb-4">איך תרצה להוריד?</p>
+                    <div class="space-y-3 text-right">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="exportChoice" value="all" checked class="w-4 h-4">
+                            <span>הכל בקובץ אחד</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="exportChoice" value="batches" class="w-4 h-4">
+                            <span>בקבוצות (מומלץ לרשימות גדולות)</span>
+                        </label>
+                        <div id="batchSizeContainer" class="hidden mr-6">
+                            <label class="block text-sm text-slate-600 mb-1">מקסימום אנשי קשר בקובץ:</label>
+                            <input type="number" id="batchSizeInput" value="5000" min="500" max="50000" step="500" 
+                                   class="w-full px-3 py-2 border rounded-lg">
                         </div>
-                    `,
-                    showCancelButton: true,
-                    confirmButtonText: 'הורד',
-                    cancelButtonText: 'ביטול',
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'הורד',
+                cancelButtonText: 'ביטול',
                     didOpen: () => {
                         document.querySelectorAll('input[name="exportChoice"]').forEach(r => {
                             r.addEventListener('change', (e) => {
@@ -1095,12 +1094,11 @@
                     }
                 });
                 
-                if (!choice) return;
-                
-                if (choice.choice === 'batches') {
-                    await downloadInBatches(type, totalContacts, choice.batchSize);
-                    return;
-                }
+            if (!choice) return;
+            
+            if (choice.choice === 'batches') {
+                await downloadInBatches(type, totalContacts, choice.batchSize);
+                return;
             }
             
             // הורדה רגילה

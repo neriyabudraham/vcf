@@ -1710,8 +1710,14 @@ app.get('/api/groups/:id', auth, async (req, res) => {
         const g = await pool.query('SELECT * FROM contact_groups WHERE id = $1', [req.params.id]);
         if (!g.rows[0]) return res.status(404).json({ error: 'Group not found' });
         
+        const countRes = await pool.query(
+            'SELECT COUNT(*) as count FROM contacts WHERE group_id = $1',
+            [req.params.id]
+        );
+        const contactsCount = parseInt(countRes.rows[0]?.count || 0);
+        
         const contacts = await pool.query(
-            'SELECT * FROM contacts WHERE group_id = $1 ORDER BY full_name ASC',
+            'SELECT * FROM contacts WHERE group_id = $1 ORDER BY full_name ASC LIMIT 1000',
             [req.params.id]
         );
         
@@ -1725,6 +1731,7 @@ app.get('/api/groups/:id', auth, async (req, res) => {
         res.json({
             ...g.rows[0],
             contacts: contacts.rows,
+            contactsCount,
             versions: versions.rows
         });
     } catch (err) {
@@ -2387,10 +2394,22 @@ app.post('/api/public/clear-name/:token/:contactId', async (req, res) => {
 // API ציבורי - ייצוא VCF
 app.get('/api/public/export/:token', async (req, res) => {
     try {
+        const { batch, batchSize } = req.query;
+        const batchNum = parseInt(batch) || 0;
+        const size = parseInt(batchSize) || 0;
+        
         const g = await pool.query('SELECT id, name FROM contact_groups WHERE share_token = $1', [req.params.token]);
         if (!g.rows[0]) return res.status(404).json({ error: 'Not found' });
         
-        const contacts = await pool.query('SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1', [g.rows[0].id]);
+        let query = 'SELECT full_name, phone, email, original_data FROM contacts WHERE group_id = $1 ORDER BY id';
+        const params = [g.rows[0].id];
+        
+        if (size > 0) {
+            query += ` LIMIT $2 OFFSET $3`;
+            params.push(size, batchNum * size);
+        }
+        
+        const contacts = await pool.query(query, params);
         
         let vcf = '';
         contacts.rows.forEach(c => {
@@ -2399,9 +2418,11 @@ app.get('/api/public/export/:token', async (req, res) => {
         
         res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
         const groupName = g.rows[0].name || 'contacts';
-        res.setHeader('Content-Disposition', `attachment; filename="contacts.vcf"; filename*=UTF-8''${encodeURIComponent(groupName)}.vcf`);
+        const filename = size > 0 ? `contacts_${batchNum + 1}` : 'contacts';
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.vcf"; filename*=UTF-8''${encodeURIComponent(groupName)}${size > 0 ? '_' + (batchNum + 1) : ''}.vcf`);
         res.send(vcf);
     } catch (err) {
+        console.error('[PUBLIC EXPORT] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
