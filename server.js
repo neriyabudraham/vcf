@@ -470,6 +470,47 @@ async function makeUniqueName(name, existingNames, phone = '') {
     return uniqueName;
 }
 
+// יצירת vCard תקני - פורמט 3.0 עם CRLF
+function generateVCard(contact) {
+    const CRLF = '\r\n';
+    const name = (contact.full_name || 'Unknown').replace(/[\r\n]/g, ' ').trim();
+    
+    // פיצול שם לחלקים (שם משפחה, שם פרטי)
+    const nameParts = name.split(' ');
+    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : name;
+    const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : '';
+    
+    let vcard = '';
+    vcard += `BEGIN:VCARD${CRLF}`;
+    vcard += `VERSION:3.0${CRLF}`;
+    vcard += `N:${lastName};${firstName};;;${CRLF}`;
+    vcard += `FN:${name}${CRLF}`;
+    
+    // טלפונים
+    const mergedPhones = contact.original_data?.mergedPhones;
+    if (mergedPhones && mergedPhones.length > 1) {
+        mergedPhones.forEach(mp => {
+            const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
+            if (mp.phone) vcard += `TEL;TYPE=${type}:${mp.phone}${CRLF}`;
+        });
+    } else if (contact.phone) {
+        vcard += `TEL;TYPE=CELL:${contact.phone}${CRLF}`;
+    }
+    
+    // מייל
+    if (contact.email) {
+        vcard += `EMAIL:${contact.email}${CRLF}`;
+    }
+    
+    // קטגוריות
+    if (contact.original_data?.categories) {
+        vcard += `CATEGORIES:${contact.original_data.categories}${CRLF}`;
+    }
+    
+    vcard += `END:VCARD${CRLF}`;
+    return vcard;
+}
+
 function parseVcf(content) {
     const contacts = [];
     content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -2120,22 +2161,7 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
             });
         } else {
             r.rows.forEach(c => {
-                const name = (c.full_name || 'Unknown').replace(/\n/g, ' ');
-                out += `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\n`;
-                
-                const mergedPhones = c.original_data?.mergedPhones;
-                if (mergedPhones && mergedPhones.length > 1) {
-                    mergedPhones.forEach(mp => {
-                        const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
-                        out += `TEL;TYPE=${type}:${mp.phone || ''}\n`;
-                    });
-                } else if (c.phone) {
-                    out += `TEL;TYPE=CELL:${c.phone}\n`;
-                }
-                
-                if (c.email) out += `EMAIL:${c.email}\n`;
-                if (c.original_data?.categories) out += `CATEGORIES:${c.original_data.categories}\n`;
-                out += `END:VCARD\n`;
+                out += generateVCard(c);
             });
         }
         
@@ -2150,7 +2176,8 @@ app.get('/api/export/:type/:id', auth, async (req, res) => {
         // filename must be ASCII only, use filename* for UTF-8
         const asciiFilename = `contacts${size > 0 ? '_' + (batchNum + 1) : ''}.${req.params.type}`;
         res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}.${req.params.type}`);
-        res.send('\ufeff' + out);
+        // BOM רק ל-CSV (עבור Excel), לא ל-VCF
+        res.send(req.params.type === 'csv' ? '\ufeff' + out : out);
     } catch (err) {
         console.error('[EXPORT] Error:', err);
         res.status(500).json({ error: err.message });
@@ -2367,28 +2394,13 @@ app.get('/api/public/export/:token', async (req, res) => {
         
         let vcf = '';
         contacts.rows.forEach(c => {
-            vcf += `BEGIN:VCARD\nVERSION:3.0\nFN:${c.full_name}\n`;
-            
-            // בדוק אם יש מספרי טלפון מאוחדים
-            const mergedPhones = c.original_data?.mergedPhones;
-            if (mergedPhones && mergedPhones.length > 1) {
-                mergedPhones.forEach(mp => {
-                    const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
-                    vcf += `TEL;TYPE=${type}:${mp.phone}\n`;
-                });
-            } else if (c.phone) {
-                vcf += `TEL;TYPE=CELL:${c.phone}\n`;
-            }
-            
-            if (c.email) vcf += `EMAIL:${c.email}\n`;
-            if (c.original_data?.categories) vcf += `CATEGORIES:${c.original_data.categories}\n`;
-            vcf += `END:VCARD\n`;
+            vcf += generateVCard(c);
         });
         
         res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
         const groupName = g.rows[0].name || 'contacts';
         res.setHeader('Content-Disposition', `attachment; filename="contacts.vcf"; filename*=UTF-8''${encodeURIComponent(groupName)}.vcf`);
-        res.send('\ufeff' + vcf);
+        res.send(vcf);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
