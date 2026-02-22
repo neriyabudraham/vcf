@@ -510,7 +510,9 @@ function generateVCard(contact) {
     const name = (contact.full_name || 'Unknown').replace(/[\r\n]/g, ' ').trim();
     
     // פיצול שם לחלקים (שם משפחה, שם פרטי)
-    const nameParts = name.split(' ');
+    // הכלל: רק המילה האחרונה היא שם משפחה, כל השאר שם פרטי
+    // כולל קידומות קצרות כמו "א" או "א א"
+    const nameParts = name.split(/\s+/).filter(p => p);
     const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : name;
     const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : '';
     
