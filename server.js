@@ -470,6 +470,40 @@ async function makeUniqueName(name, existingNames, phone = '') {
     return uniqueName;
 }
 
+// פורמט טלפון ישראלי: 050-0000000
+function formatPhoneForExport(phone) {
+    if (!phone) return phone;
+    
+    let cleaned = phone.toString().replace(/[\s\-\(\)]/g, '');
+    
+    // אם מתחיל ב-972, המר לפורמט ישראלי
+    if (cleaned.startsWith('972') && cleaned.length >= 12) {
+        // 972501234567 -> 050-1234567
+        const local = '0' + cleaned.substring(3); // הסר 972 והוסף 0
+        if (local.length === 10) {
+            return local.substring(0, 3) + '-' + local.substring(3);
+        }
+        return local;
+    }
+    
+    // אם מתחיל ב-+972
+    if (cleaned.startsWith('+972') && cleaned.length >= 13) {
+        const local = '0' + cleaned.substring(4);
+        if (local.length === 10) {
+            return local.substring(0, 3) + '-' + local.substring(3);
+        }
+        return local;
+    }
+    
+    // אם כבר בפורמט ישראלי (מתחיל ב-05)
+    if (cleaned.startsWith('05') && cleaned.length === 10) {
+        return cleaned.substring(0, 3) + '-' + cleaned.substring(3);
+    }
+    
+    // שאר המספרים - החזר כמו שהם
+    return phone;
+}
+
 // יצירת vCard תקני - פורמט 3.0 עם CRLF
 function generateVCard(contact) {
     const CRLF = '\r\n';
@@ -491,10 +525,10 @@ function generateVCard(contact) {
     if (mergedPhones && mergedPhones.length > 1) {
         mergedPhones.forEach(mp => {
             const type = mp.label === 'עבודה' ? 'WORK' : mp.label === 'בית' ? 'HOME' : 'CELL';
-            if (mp.phone) vcard += `TEL;TYPE=${type}:${mp.phone}${CRLF}`;
+            if (mp.phone) vcard += `TEL;TYPE=${type}:${formatPhoneForExport(mp.phone)}${CRLF}`;
         });
     } else if (contact.phone) {
-        vcard += `TEL;TYPE=CELL:${contact.phone}${CRLF}`;
+        vcard += `TEL;TYPE=CELL:${formatPhoneForExport(contact.phone)}${CRLF}`;
     }
     
     // מייל
