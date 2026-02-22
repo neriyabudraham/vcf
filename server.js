@@ -1280,6 +1280,61 @@ app.post('/api/analyze', auth, async (req, res) => {
 
             console.log(`[ANALYZE] Total stats:`, totalStats);
 
+            // איחוד אנשי קשר עם אותו מייל אבל טלפונים שונים
+            const emailToContacts = new Map();
+            for (const [phone, contact] of phoneMap) {
+                if (contact.email && contact.email.includes('@')) {
+                    const emailKey = contact.email.toLowerCase().trim();
+                    if (!emailToContacts.has(emailKey)) {
+                        emailToContacts.set(emailKey, []);
+                    }
+                    emailToContacts.get(emailKey).push({ phone, contact });
+                }
+            }
+            
+            // מזג אנשי קשר עם אותו מייל
+            let mergedByEmail = 0;
+            for (const [email, contactsWithSameEmail] of emailToContacts) {
+                if (contactsWithSameEmail.length > 1) {
+                    // בחר את איש הקשר עם השם הטוב ביותר כראשי
+                    let bestIdx = 0;
+                    let bestScore = await scoreName(contactsWithSameEmail[0].contact.name);
+                    for (let i = 1; i < contactsWithSameEmail.length; i++) {
+                        const score = await scoreName(contactsWithSameEmail[i].contact.name);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestIdx = i;
+                        }
+                    }
+                    
+                    const primary = contactsWithSameEmail[bestIdx];
+                    
+                    // אסוף את כל הטלפונים
+                    const mergedPhones = contactsWithSameEmail.map(c => ({
+                        phone: c.phone,
+                        label: c.contact.originalData?.phoneType || 'נייד'
+                    }));
+                    
+                    // עדכן את איש הקשר הראשי
+                    primary.contact.originalData = primary.contact.originalData || {};
+                    primary.contact.originalData.mergedPhones = mergedPhones;
+                    primary.contact.originalData.mergedFromEmail = true;
+                    
+                    // מחק את השאר מה-phoneMap
+                    for (let i = 0; i < contactsWithSameEmail.length; i++) {
+                        if (i !== bestIdx) {
+                            phoneMap.delete(contactsWithSameEmail[i].phone);
+                            mergedByEmail++;
+                        }
+                    }
+                }
+            }
+            
+            if (mergedByEmail > 0) {
+                console.log(`[ANALYZE] Merged ${mergedByEmail} contacts by same email`);
+                totalStats.mergedByEmail = mergedByEmail;
+            }
+
             // מיין לפי אורך טלפון - מספרים ארוכים קודם
             const allData = Array.from(phoneMap.values()).sort((a, b) => {
                 const aLen = (a.phone || '').length;
